@@ -1,9 +1,23 @@
 { pkgs ? import ./dep/nixpkgs {} }:
 
+with pkgs.haskell.lib;
+
 let
   inherit (pkgs) lib;
 
 in rec {
+  haskellPackages = pkgs.haskellPackages.override {
+    overrides = self: super: {
+      which = self.callCabal2nix "which" (thunkSource ./dep/which) {};
+      cli-extras = self.callCabal2nix "cli-extras" (thunkSource ./dep/cli-extras) {};
+      cli-nix = self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {};
+      cli-git = self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {};
+      nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
+    };
+  };
+
+  command = generateOptparseApplicativeCompletion "nix-thunk" (justStaticExecutables haskellPackages.nix-thunk);
+
   inherit (import ./dep/gitignore.nix { inherit lib; }) gitignoreSource;
 
   # Retrieve source that is controlled by the hack-* scripts; it may be either a stub or a checked-out git repo
