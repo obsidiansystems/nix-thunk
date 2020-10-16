@@ -7,7 +7,7 @@ copyright: Obsidian Systems LLC 2020
 maintainer: maintainer@obsidian.systems
 author: Obsidian Systems LLC
 bug-reports: https://github.com/obsidiansystems/nix-thunk
-synopsis: Virtual vendorization with Nix
+synopsis: Lightweight dependency management with Nix
 description:
     nix-thunk lets you manage source code depencies in a lightweight and reproducible way, using Nix.  Each source repository is represented by a stub directory, which refers to the original Git repository.  nix-thunk can easily update these dependencies.
     .
