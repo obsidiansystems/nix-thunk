@@ -4,7 +4,9 @@ nix-thunk is a lightweight Nix dependency manager, focused on making it easy to 
 
 ## Installation
 
+```bash
 nix-env -f https://github.com/obsidiansystems/nix-thunk/archive/master.tar.gz -iA command
+```
 
 ## Usage
 
