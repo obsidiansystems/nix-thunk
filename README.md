@@ -2,6 +2,8 @@
 
 nix-thunk is a lightweight Nix dependency manager, focused on making it easy to contribute improvements back to libraries you depend on.
 
+nix-thunk does this by creating and managing "thunks" - directories that stand in for full git repositories.  Like git submodules, they pin a specific commit of the target repository, but unlike git submodules, you don't have to clone them to use them.  nix-thunk makes them "transparent" to Nix scripts, so any script that calls `import path/to/some/thunk` will work the same on the thunk as it does on the original repository.
+
 ## Installation
 
 ```bash
@@ -12,10 +14,13 @@ nix-env -f https://github.com/obsidiansystems/nix-thunk/archive/master.tar.gz -i
 
 ### Create a dependency
 
-In order to create a dependency, simply `git clone` it somewhere in your project; do **not** create a `git submodule` or `git subtree`.  Then, run `nix-thunk pack path/to/your/dependency`.  This will convert the git repository into a small directory of nix files that you can commit to your project's source control.  These files do two things: 1) precisely specify the repository and commit hash you are depending on, and 2) pretend that they *are* that repository.  If you use `import path/to/your/dependency` in your Nix scripts, the thunk will behave just like the git repository that it represents.
+```bash
+nix-thunk create https://example.com/some-dep
+```
+
+If you have already cloned the dependency as a git repository, you can just `pack` it instead:
 
 ```bash
-git clone https://example.com/some-dep
 nix-thunk pack some-dep
 ```
 

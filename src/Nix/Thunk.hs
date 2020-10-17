@@ -1,7 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -9,6 +9,7 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 module Nix.Thunk
   ( ThunkSource (..)
@@ -24,6 +25,7 @@ module Nix.Thunk
   , getThunkPtr
   , packThunk
   , createThunk
+  , createThunk'
   , ThunkPackConfig (..)
   , ThunkConfig (..)
   , updateThunkToLatest
@@ -35,6 +37,10 @@ module Nix.Thunk
   , nixBuildAttrWithCache
   , attrCacheFileName
   , prettyNixThunkError
+  , ThunkCreateConfig (..)
+  , parseGitUri
+  , GitUri (..)
+  , uriThunkPtr
   ) where
 
 import Control.Applicative
@@ -91,6 +97,7 @@ import Data.Function
 import Bindings.Cli.Git
 import Bindings.Cli.Coreutils (cp)
 import Bindings.Cli.Nix
+import Data.List (stripPrefix)
 
 --------------------------------------------------------------------------------
 -- Hacks
@@ -203,6 +210,14 @@ data ThunkUpdateConfig = ThunkUpdateConfig
 data ThunkPackConfig = ThunkPackConfig
   { _thunkPackConfig_force :: Bool
   , _thunkPackConfig_config :: ThunkConfig
+  } deriving Show
+
+data ThunkCreateConfig = ThunkCreateConfig
+  { _thunkCreateConfig_uri :: GitUri
+  , _thunkCreateConfig_branch :: Maybe (Name Branch)
+  , _thunkCreateConfig_rev :: Maybe (Ref Ref.SHA1)
+  , _thunkCreateConfig_config :: ThunkConfig
+  , _thunkCreateConfig_destination :: Maybe FilePath
   } deriving Show
 
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
@@ -477,6 +492,22 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     , confTrailingNewline = True
     }
 
+createThunk' :: MonadNixThunk m => ThunkCreateConfig -> m ()
+createThunk' config = do
+  newThunkPtr <- uriThunkPtr
+    (_thunkCreateConfig_uri config)
+    (_thunkConfig_private $ _thunkCreateConfig_config config)
+    (untagName <$> _thunkCreateConfig_branch config)
+    (T.pack . show <$> _thunkCreateConfig_rev config)
+  let trailingDirectoryName = reverse . takeWhile (/= '/') . dropWhile (=='/') . reverse
+      stripSuffix s = fmap reverse . stripPrefix s . reverse
+      dropDotGit :: FilePath -> FilePath
+      dropDotGit origName = fromMaybe origName $ stripSuffix ".git" origName
+      defaultDestinationForGitUri :: GitUri -> FilePath
+      defaultDestinationForGitUri = dropDotGit . trailingDirectoryName . T.unpack . URI.render . unGitUri
+      destination = fromMaybe (defaultDestinationForGitUri $ _thunkCreateConfig_uri config) $ _thunkCreateConfig_destination config
+  createThunk destination $ Right newThunkPtr
+
 createThunk :: MonadNixThunk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
 createThunk target ptrInfo =
   ifor_ (_thunkSpec_files spec) $ \path -> \case
@@ -502,29 +533,28 @@ createThunkWithLatest target s = do
     }
 
 updateThunkToLatest :: MonadNixThunk m => ThunkUpdateConfig -> FilePath -> m ()
-updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ do
-  checkThunkDirectory target
-  -- check to see if thunk should be updated to a specific branch or just update it's current branch
-  case mBranch of
-    Nothing -> do
-      (overwrite, ptr) <- readThunk target >>= \case
+updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
+  withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
+    checkThunkDirectory target
+    -- check to see if thunk should be updated to a specific branch or just update it's current branch
+    case mBranch of
+      Nothing -> do
+        (overwrite, ptr) <- readThunk target >>= \case
+          Left err -> failWith [i|Thunk update: ${err}|]
+          Right c -> case c of
+            ThunkData_Packed _ t -> return (target, t)
+            ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
+        let src = _thunkPtr_source ptr
+        rev <- getLatestRev src
+        overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
+          { _thunkPtr_source = src
+          , _thunkPtr_rev = rev
+          }
+      Just branch -> readThunk target >>= \case
         Left err -> failWith [i|Thunk update: ${err}|]
         Right c -> case c of
-          ThunkData_Packed _ t -> return (target, t)
-          ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
-      let src = _thunkPtr_source ptr
-      rev <- getLatestRev src
-      overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
-        { _thunkPtr_source = src
-        , _thunkPtr_rev = rev
-        }
-    Just branch -> readThunk target >>= \case
-      Left err -> failWith [i|Thunk update: ${err}|]
-      Right c -> case c of
-        ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
-        ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
-  where
-    spinner = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest")
+          ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
+          ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
 
 setThunk :: MonadNixThunk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
 setThunk thunkConfig target gs branch = do

@@ -11,7 +11,7 @@ import Data.Void
 
 data Args = Args
   { _args_verbose :: Bool
-  , _args_command :: ThunkOption
+  , _args_command :: ThunkCommand
   }
 
 verbose :: Parser Bool
@@ -22,7 +22,7 @@ verbose = flag False True $ mconcat
   ]
 
 args :: Parser Args
-args = Args <$> verbose <*> thunkOption
+args = Args <$> verbose <*> thunkCommand
 
 argsInfo :: ParserInfo Args
 argsInfo = info (args <**> helper) $ mconcat
@@ -40,7 +40,7 @@ main = do
   args <- getArgs
   args' <- handleParseResult $ execParserPure parserPrefs argsInfo args
   cliConf <- mkDefaultCliConfig args
-  runCli cliConf (runThunkOption (_args_command args')) >>= \case
+  runCli cliConf (runThunkCommand (_args_command args')) >>= \case
     Right () -> exitWith ExitSuccess
     Left e -> do
       T.putStrLn $ prettyNixThunkError e
