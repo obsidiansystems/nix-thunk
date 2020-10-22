@@ -37,7 +37,7 @@ thunkCreateConfig :: Parser ThunkCreateConfig
 thunkCreateConfig = ThunkCreateConfig
   <$> argument (maybeReader (parseGitUri . T.pack)) (metavar "URI" <> help "Address of the target repository")
   <*> optional (strOption (short 'b' <> long "branch" <> metavar "BRANCH" <> help "Point the new thunk at the given branch"))
-  <*> optional (option (fromHexString <$> auto) (long "rev" <> long "revision" <> metavar "REVISION" <> help "Point the new thunk at the given revision"))
+  <*> optional (option (fromHexString <$> str) (long "rev" <> long "revision" <> metavar "REVISION" <> help "Point the new thunk at the given revision"))
   <*> thunkConfig
   <*> optional (strArgument (action "directory" <> metavar "DESTINATION" <> help "The name of a new directory to create for the thunk"))
 
