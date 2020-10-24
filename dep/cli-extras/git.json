@@ -1,8 +1,8 @@
 {
-  "url": "ssh://git@github.com/obsidiansystems/cli-extras.git",
+  "url": "https://github.com/obsidiansystems/cli-extras.git",
   "rev": "368ca93cfcca9e2fe077bc0b7649a402ec89dce5",
   "sha256": "1g8j45q1ycqpvz2n8aaq4z8zvak0f0vpqhiy1z3siv230kchkrdi",
-  "private": true,
+  "private": false,
   "fetchSubmodules": false,
   "branch": "master"
 }
