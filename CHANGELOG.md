@@ -1,5 +1,8 @@
 # Revision history for nix-thunk
 
+## 0.2.0.2
+* Add support for GHC 8.8.4.
+
 ## 0.2.0.1
 * Fix parsing of --rev arguments
 

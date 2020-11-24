@@ -1,8 +1,0 @@
-{
-  "url": "https://github.com/obsidiansystems/cli-nix.git",
-  "rev": "de73e014036f2648af2e9f06b8ce711dfa1e1a22",
-  "sha256": "0p5768l1gg5j869m5wfpzhfxlraz0c1vghm9r7h3fin64p3si61z",
-  "private": false,
-  "fetchSubmodules": false,
-  "branch": "master"
-}

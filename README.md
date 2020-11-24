@@ -1,4 +1,6 @@
-# nix-thunk
+nix-thunk
+=========
+[![Haskell](https://img.shields.io/badge/language-Haskell-orange.svg)](https://haskell.org) [![Hackage](https://img.shields.io/hackage/v/nix-thunk.svg)](https://hackage.haskell.org/package/nix-thunk) [![Hackage CI](https://matrix.hackage.haskell.org/api/v2/packages/nix-thunk/badge)](https://matrix.hackage.haskell.org/#/package/nix-thunk) [![Github CI](https://github.com/obsidiansystems/nix-thunk/workflows/github-action/badge.svg)](https://github.com/obsidiansystems/nix-thunk/actions) [![BSD3 License](https://img.shields.io/badge/license-BSD3-blue.svg)](https://github.com/obsidiansystems/nix-thunk/blob/master/LICENSE)
 
 nix-thunk is a lightweight Nix dependency manager, focused on making it easy to contribute improvements back to libraries you depend on.
 

@@ -1,6 +1,6 @@
 cabal-version:      >=1.10
 name:               nix-thunk
-version:            0.2.0.1
+version:            0.2.0.2
 license:            BSD3
 license-file:       LICENSE
 copyright:          Obsidian Systems LLC 2020
@@ -16,6 +16,7 @@ description:
 category:           Nix, Git
 build-type:         Simple
 extra-source-files: CHANGELOG.md
+                    README.md
 
 library
   exposed-modules:
@@ -30,9 +31,9 @@ library
     , aeson-pretty          >=0.8.7    && <0.9
     , base                  >=4.12.0.0 && <4.15
     , bytestring            >=0.10.8.2 && <0.11
-    , cli-extras            >=0.1.0.0  && <0.2
-    , cli-git               >=0.1.0.0  && <0.2
-    , cli-nix               >=0.1.0.0  && <0.2
+    , cli-extras            >=0.1.0.1  && <0.2
+    , cli-git               >=0.1.0.1  && <0.2
+    , cli-nix               >=0.1.0.1  && <0.2
     , containers            >=0.6.0.1  && <0.7
     , data-default          >=0.7.1.1  && <0.8
     , directory             >=1.3.3.0  && <1.4
@@ -43,7 +44,7 @@ library
     , git                   >=0.3.0    && <0.4
     , github                >=0.22     && <0.23
     , here                  >=1.2.13   && <1.3
-    , lens                  >=4.17.1   && <4.18
+    , lens                  >=4.17.1   && <4.20
     , logging-effect        >=1.3.4    && <1.4
     , megaparsec            >=7.0.5    && <7.1
     , modern-uri            >=0.3.1.0  && <0.4
@@ -61,7 +62,11 @@ executable nix-thunk
   default-language: Haskell2010
   build-depends:
       base                  >=4.12.0.0 && <4.13
-    , cli-extras            >=0.1.0.0  && <0.2
+    , cli-extras            >=0.1.0.1  && <0.2
     , nix-thunk
     , optparse-applicative  >=0.14.3.0 && <0.15
     , text                  >=1.2.3.1  && <1.3
+
+source-repository head
+  type:     git
+  location: git://github.com/obsidiansystems/nix-thunk.git
