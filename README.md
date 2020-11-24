@@ -45,7 +45,11 @@ nix-thunk update some-dep
 ```
 
 ## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change. See the [contribution guide](CONTRIBUTING.md) for more details.
 
 ## License
 [BSD3](./LICENSE)
+
+***
+
+![Obsidian Systems](https://obsidian.systems/static/images/ObsidianSystemsLogo.svg)
