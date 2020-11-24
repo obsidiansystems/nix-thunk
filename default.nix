@@ -13,6 +13,11 @@ in rec {
       cli-nix = self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {};
       cli-git = self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {};
       nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
+      monad-logger = self.callHackageDirect {
+        pkg = "monad-logger";
+        ver = "0.3.30";
+        sha256 = "17nj96r8pjw6jngilbcb7n6f8myihjdri2rhvarczh2rnc5q9ja4";
+      } {};
     };
   };
 
