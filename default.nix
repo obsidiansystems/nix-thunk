@@ -1,4 +1,6 @@
-{ pkgs ? import ./dep/nixpkgs {} }:
+{ pkgs ? (import ./dep/ci).nixos2003
+, ghc ? "ghc865"
+}:
 
 with pkgs.haskell.lib;
 
@@ -6,18 +8,13 @@ let
   inherit (pkgs) lib;
 
 in rec {
-  haskellPackages = pkgs.haskellPackages.override {
+  haskellPackages = pkgs.haskell.packages."${ghc}".override {
     overrides = self: super: {
       which = self.callCabal2nix "which" (thunkSource ./dep/which) {};
       cli-extras = self.callCabal2nix "cli-extras" (thunkSource ./dep/cli-extras) {};
       cli-nix = self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {};
       cli-git = self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {};
       nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
-      monad-logger = self.callHackageDirect {
-        pkg = "monad-logger";
-        ver = "0.3.30";
-        sha256 = "17nj96r8pjw6jngilbcb7n6f8myihjdri2rhvarczh2rnc5q9ja4";
-      } {};
     };
   };
 
