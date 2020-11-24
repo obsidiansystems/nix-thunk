@@ -1,8 +1,0 @@
-{
-  "url": "https://github.com/obsidiansystems/cli-git.git",
-  "rev": "bb2034f974ad04c1827ef8ef4160872cb8f00063",
-  "sha256": "0mqkmjfvyv25216gj2jhpm9a4i6b3arp86yi2n5dss9j5fzlg7sm",
-  "private": false,
-  "fetchSubmodules": false,
-  "branch": "master"
-}
