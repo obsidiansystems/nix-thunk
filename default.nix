@@ -14,6 +14,7 @@ in rec {
       cli-extras = self.callCabal2nix "cli-extras" (thunkSource ./dep/cli-extras) {};
       cli-nix = self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {};
       cli-git = self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {};
+      github = self.callCabal2nix "github" (thunkSource ./dep/github) {};
       nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
     };
   };

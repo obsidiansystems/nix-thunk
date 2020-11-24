@@ -1,7 +1,8 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -41,30 +42,43 @@ module Nix.Thunk
   , parseGitUri
   , GitUri (..)
   , uriThunkPtr
+  , Ref(..)
+  , refFromHexString
   ) where
 
+import Bindings.Cli.Coreutils (cp)
+import Bindings.Cli.Git
+import Bindings.Cli.Nix
+import Cli.Extras
 import Control.Applicative
-import Control.Lens (ifor, ifor_, (.~), makePrisms)
+import Control.Exception (Exception, displayException, throw, try)
+import Control.Lens ((.~), ifor, ifor_, makePrisms)
 import Control.Monad
-import Control.Monad.Extra (findM)
-import Control.Monad.Catch (MonadCatch, handle, MonadMask)
-import Control.Monad.Fail (MonadFail)
+import Control.Monad.Catch (MonadCatch, MonadMask, handle)
 import Control.Monad.Except
+import Control.Monad.Extra (findM)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Log (MonadLog)
+import Crypto.Hash (Digest, HashAlgorithm, SHA1, digestFromByteString)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
 import Data.Bifunctor (first)
+import Data.ByteArray.Encoding (Base(..), convertFromBase, convertToBase)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
 import Data.Containers.ListUtils (nubOrd)
-import Data.Either.Combinators (fromRight')
+import Data.Data (Data)
+import Data.Default
+import Data.Either.Combinators (fromRight', rightToMaybe)
 import Data.Foldable (toList)
+import Data.Function
 import Data.Functor ((<&>))
-import Data.Git.Ref (Ref)
-import qualified Data.Git.Ref as Ref
 import qualified Data.List as L
-import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
+import Data.List (stripPrefix)
+import Data.List.NonEmpty (NonEmpty(..), nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -77,27 +91,19 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import qualified Data.Text.IO as T
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Traversable
+import Data.Typeable (Typeable)
 import Data.Yaml (parseMaybe)
 import GitHub
 import GitHub.Data.Name
 import System.Directory
 import System.Exit
 import System.FilePath
-import System.IO.Temp
-import qualified Text.URI as URI
-import Cli.Extras
-import Control.Exception (displayException, try)
-import Data.Either.Combinators (rightToMaybe)
-import Data.Traversable
 import System.IO.Error (isDoesNotExistError)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import System.IO.Temp
 import System.Posix.Files
-import Data.Default
-import Data.Function
-import Bindings.Cli.Git
-import Bindings.Cli.Coreutils (cp)
-import Bindings.Cli.Nix
-import Data.List (stripPrefix)
+import qualified Text.URI as URI
 
 --------------------------------------------------------------------------------
 -- Hacks
@@ -155,7 +161,7 @@ type NixSha256 = Text --TODO: Use a smart constructor and make this actually ver
 
 -- | A specific revision of data; it may be available from multiple sources
 data ThunkRev = ThunkRev
-  { _thunkRev_commit :: Ref Ref.SHA1
+  { _thunkRev_commit :: Ref SHA1
   , _thunkRev_nixSha256 :: NixSha256
   }
   deriving (Show, Eq, Ord)
@@ -215,7 +221,7 @@ data ThunkPackConfig = ThunkPackConfig
 data ThunkCreateConfig = ThunkCreateConfig
   { _thunkCreateConfig_uri :: GitUri
   , _thunkCreateConfig_branch :: Maybe (Name Branch)
-  , _thunkCreateConfig_rev :: Maybe (Ref Ref.SHA1)
+  , _thunkCreateConfig_rev :: Maybe (Ref SHA1)
   , _thunkCreateConfig_config :: ThunkConfig
   , _thunkCreateConfig_destination :: Maybe FilePath
   } deriving Show
@@ -249,8 +255,8 @@ getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
   ThunkSource_GitHub s -> _gitHubSource_branch s
   ThunkSource_Git s -> _gitSource_branch s
 
-commitNameToRef :: Name Commit -> Ref Ref.SHA1
-commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
+commitNameToRef :: Name Commit -> Ref SHA1
+commitNameToRef (N c) = refFromHex $ encodeUtf8 c
 
 -- TODO: Use spinner here.
 getNixSha256ForUriUnpacked
@@ -399,7 +405,7 @@ parseThunkPtr parseSrc v = do
   src <- parseSrc v
   pure $ ThunkPtr
     { _thunkPtr_rev = ThunkRev
-      { _thunkRev_commit = Ref.fromHexString rev
+      { _thunkRev_commit = refFromHexString rev
       , _thunkRev_nixSha256 = sha256
       }
     , _thunkPtr_source = src
@@ -455,13 +461,13 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     [ Just $ "owner" .= _gitHubSource_owner s
     , Just $ "repo" .= _gitHubSource_repo s
     , ("branch" .=) <$> _gitHubSource_branch s
-    , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
+    , Just $ "rev" .= refToHexString (_thunkRev_commit rev)
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
     , Just $ "private" .= _gitHubSource_private s
     ]
   ThunkSource_Git s -> encodePretty' plainGitCfg $ Aeson.object $ catMaybes
     [ Just $ "url" .= gitUriToText (_gitSource_url s)
-    , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
+    , Just $ "rev" .= refToHexString (_thunkRev_commit rev)
     , ("branch" .=) <$> _gitSource_branch s
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
     , Just $ "fetchSubmodules" .= _gitSource_fetchSubmodules s
@@ -924,7 +930,7 @@ gitCloneForThunkUnpack gitSrc commit dir = do
     ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
     ++  do branch <- maybeToList $ _gitSource_branch gitSrc
            [ "--branch", T.unpack $ untagName branch ]
-  git ["reset", "--hard", Ref.toHexString commit]
+  git ["reset", "--hard", refToHexString commit]
   when (_gitSource_fetchSubmodules gitSrc) $
     git ["submodule", "update", "--recursive", "--init"]
 
@@ -1298,3 +1304,35 @@ parseSshShorthand uri = do
   guard $ isNothing (T.findIndex (=='/') authAndHostname)
         && not (T.null colonAndPath)
   URI.mkURI properUri
+
+-- The following code has been adapted from the 'Data.Git.Ref',
+-- which is apparently no longer maintained
+
+-- | Represent a git reference (SHA1)
+newtype Ref hash = Ref { unRef :: Digest hash }
+  deriving (Eq, Ord, Typeable)
+
+-- | Invalid Reference exception raised when
+-- using something that is not a ref as a ref.
+newtype RefInvalid = RefInvalid { unRefInvalid :: ByteString }
+  deriving (Show, Eq, Data, Typeable)
+
+instance Exception RefInvalid
+
+refFromHexString :: HashAlgorithm hash => String -> Ref hash
+refFromHexString = refFromHex . BSC.pack
+
+refFromHex :: HashAlgorithm hash => BSC.ByteString -> Ref hash
+refFromHex s =
+  case convertFromBase Base16 s :: Either String ByteString of
+    Left _ -> throw $ RefInvalid s
+    Right h -> case digestFromByteString h of
+      Nothing -> throw $ RefInvalid s
+      Just d -> Ref d
+
+-- | transform a ref into an hexadecimal string
+refToHexString :: Ref hash -> String
+refToHexString (Ref d) = show d
+
+instance Show (Ref hash) where
+  show (Ref bs) = BSC.unpack $ convertToBase Base16 bs
