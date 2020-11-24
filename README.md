@@ -12,7 +12,7 @@ nix-thunk does this by creating and managing "thunks" - directories that stand i
 nix-env -f https://github.com/obsidiansystems/nix-thunk/archive/master.tar.gz -iA command
 ```
 
-## Usage
+## Command Usage
 
 ### Create a dependency
 
@@ -42,6 +42,18 @@ For routine updates, you can run `nix-thunk update path/to/your/dependency` to p
 
 ```bash
 nix-thunk update some-dep
+```
+
+## Nix Usage
+
+The [`default.nix`](default.nix) file in this repository also defines the nix function, `thunkSource`. This can be used in your nix files to unpack thunks. In the following example, a thunk is used in place of the source location argument to `callCabal2nix`.
+
+```nix
+  haskellPackages = pkgs.haskell.packages.ghc865.override {
+    overrides = self: super: {
+      which = self.callCabal2nix "which" (thunkSource ./dep/which) {};
+    };
+  };
 ```
 
 ## Contributing
