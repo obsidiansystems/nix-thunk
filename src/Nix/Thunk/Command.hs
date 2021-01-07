@@ -2,18 +2,17 @@
 {-# LANGUAGE LambdaCase #-}
 module Nix.Thunk.Command where
 
+import Cli.Extras (HasCliConfig, Output)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.Error.Class (MonadError)
 import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Log (MonadLog)
-import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty (NonEmpty(..))
+import qualified Data.Text as T
 import Nix.Thunk
-import Cli.Extras (HasCliConfig, Output)
 import Options.Applicative
 import System.FilePath
-import Data.Git.Ref
-import qualified Data.Text as T
 
 thunkConfig :: Parser ThunkConfig
 thunkConfig = ThunkConfig
@@ -37,7 +36,7 @@ thunkCreateConfig :: Parser ThunkCreateConfig
 thunkCreateConfig = ThunkCreateConfig
   <$> argument (maybeReader (parseGitUri . T.pack)) (metavar "URI" <> help "Address of the target repository")
   <*> optional (strOption (short 'b' <> long "branch" <> metavar "BRANCH" <> help "Point the new thunk at the given branch"))
-  <*> optional (option (fromHexString <$> auto) (long "rev" <> long "revision" <> metavar "REVISION" <> help "Point the new thunk at the given revision"))
+  <*> optional (option (refFromHexString <$> str) (long "rev" <> long "revision" <> metavar "REVISION" <> help "Point the new thunk at the given revision"))
   <*> thunkConfig
   <*> optional (strArgument (action "directory" <> metavar "DESTINATION" <> help "The name of a new directory to create for the thunk"))
 

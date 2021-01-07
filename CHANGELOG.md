@@ -1,5 +1,11 @@
 # Revision history for nix-thunk
 
+## 0.2.0.2
+* Add support for GHC 8.8.4.
+
+## 0.2.0.1
+* Fix parsing of --rev arguments
+
 ## 0.2.0.0
 * Add nix-thunk create.  This caused some minor breakage to the Haskell library API, but not the Nix or command line interfaces.
 
