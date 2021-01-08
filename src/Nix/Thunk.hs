@@ -77,7 +77,6 @@ import Data.Foldable (toList)
 import Data.Function
 import Data.Functor ((<&>))
 import qualified Data.List as L
-import Data.List (stripPrefix)
 import Data.List.NonEmpty (NonEmpty(..), nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
@@ -506,9 +505,8 @@ createThunk' config = do
     (untagName <$> _thunkCreateConfig_branch config)
     (T.pack . show <$> _thunkCreateConfig_rev config)
   let trailingDirectoryName = reverse . takeWhile (/= '/') . dropWhile (=='/') . reverse
-      stripSuffix s = fmap reverse . stripPrefix s . reverse
       dropDotGit :: FilePath -> FilePath
-      dropDotGit origName = fromMaybe origName $ stripSuffix ".git" origName
+      dropDotGit origName = fromMaybe origName $ stripExtension "git" origName
       defaultDestinationForGitUri :: GitUri -> FilePath
       defaultDestinationForGitUri = dropDotGit . trailingDirectoryName . T.unpack . URI.render . unGitUri
       destination = fromMaybe (defaultDestinationForGitUri $ _thunkCreateConfig_uri config) $ _thunkCreateConfig_destination config
