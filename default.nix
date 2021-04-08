@@ -1,5 +1,5 @@
 { pkgs ? (import ./dep/ci).nixos2003
-, ghc ? "ghc865"
+, ghc ? "ghc884"
 }:
 
 with pkgs.haskell.lib;
