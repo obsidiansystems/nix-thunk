@@ -1,4 +1,4 @@
-{ pkgs ? (import ./dep/ci).nixos2003
+{ pkgs ? import ./dep/ci/nixos-20.03 {}
 , ghc ? "ghc884"
 }:
 
@@ -15,6 +15,46 @@ in rec {
       cli-nix = self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {};
       cli-git = self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {};
       github = self.callCabal2nix "github" (thunkSource ./dep/github) {};
+      logging-effect = self.callHackageDirect {
+        pkg = "logging-effect";
+        ver = "1.3.11";
+        sha256 = "0g4590zlnj6ycmaczkik011im4nlffplpd337g7nnasjw3wqxvdv";
+      } {};
+      unliftio-core = self.callHackageDirect {
+        pkg = "unliftio-core";
+        ver = "0.2.0.1";
+        sha256 = "06cbv2yx5a6qj4p1w91q299r0yxv96ms72xmjvkpm9ic06ikvzzq";
+      } {};
+      prettyprinter = self.callHackageDirect {
+        pkg = "prettyprinter";
+        ver = "1.6.2";
+        sha256 = "0ppmw0x2b2r71p0g43b3f85sy5cjb1gax8ik2zryfmii3b1hzz7c";
+      } {};
+      resourcet = self.callHackageDirect {
+        pkg = "resourcet";
+        ver = "1.2.4.2";
+        sha256 = "1kwb0h7z1l5vvzrl2b4bpz15qzbgwn7a6i00fn2b7zkj1n25vmg8";
+      } {};
+      monad-logger = self.callHackageDirect {
+        pkg = "monad-logger";
+        ver = "0.3.36";
+        sha256 = "0ba1liqvmwjcyz3smp9fh2px1kvz8zzbwcafm0armhwazlys1qh1";
+      } {};
+      base-compat = self.callHackageDirect {
+        pkg = "base-compat";
+        ver = "0.11.1";
+        sha256 = "06030s3wzwkrm0a1hw4w7cd0nlrmxadryic4dr43kh380lzgdz58";
+      } {};
+      base-compat-batteries = self.callHackageDirect {
+        pkg = "base-compat-batteries";
+        ver = "0.11.1";
+        sha256 = "1xsh4mcrmgiavgnkb5bg5lzxj1546525ffxjms3rlagf4jh9sn1i";
+      } {};
+      time-compat = self.callHackageDirect {
+        pkg = "time-compat";
+        ver = "1.9.5";
+        sha256 = "0xy044x713bbvl8i1180bnccn60ji1n7mw1scs9ydy615bgwr82c";
+      } {};
       nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
     };
   };
