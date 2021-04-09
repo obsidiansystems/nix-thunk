@@ -55,6 +55,11 @@ in rec {
         ver = "1.9.5";
         sha256 = "0xy044x713bbvl8i1180bnccn60ji1n7mw1scs9ydy615bgwr82c";
       } {};
+      ansi-terminal = self.callHackageDirect {
+        pkg = "ansi-terminal";
+        ver = "0.9.1";
+        sha256 = "152lnv339fg8nacvyhxjfy2ylppc33ckb6qrgy0vzanisi8pgcvd";
+      } {};
       nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
     };
   };
