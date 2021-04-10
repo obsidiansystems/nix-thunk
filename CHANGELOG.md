@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.2.0.3
+
+* Default to GHC 8.8.4 and update dependency bounds
+
 ## 0.2.0.2
 * Add support for GHC 8.8.4.
 
