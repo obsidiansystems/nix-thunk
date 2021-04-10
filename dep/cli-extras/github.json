@@ -1,8 +1,8 @@
 {
   "owner": "obsidiansystems",
   "repo": "cli-extras",
-  "branch": "release/0.1.0.1",
+  "branch": "release/0.1.0.2",
   "private": false,
-  "rev": "64afac6a7bbb0a99e70ce6ce58bbdc26a0c11cb8",
-  "sha256": "05c84jfl20q6xnzwvy722zqx4zj1858q91dk2236gidvyawsybgz"
+  "rev": "d6730430c654240312950765a60862fedf2c528a",
+  "sha256": "1w31xl4wj3lmjw51dmrqz3c0q2a4qlmzjzgb25451hi9y5d3r88l"
 }

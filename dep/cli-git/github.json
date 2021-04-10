@@ -1,8 +1,8 @@
 {
   "owner": "obsidiansystems",
   "repo": "cli-git",
-  "branch": "release/0.1.0.1",
+  "branch": "release/0.1.0.2",
   "private": false,
-  "rev": "7872bd16115abaf099eb98985f214bb9e7982a41",
-  "sha256": "0f5aygzz35m498a5cqgnb10ylkz7cdni6d9hg4mdmdy30kmw910g"
+  "rev": "d5f854be57803e43113199cbf40be724cd39b6b8",
+  "sha256": "06qysn3sjnrzg8vkd1iwq3p8cdgrq56fbbp4py2rz1a78irg4l97"
 }
