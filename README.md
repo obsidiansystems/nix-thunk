@@ -65,6 +65,14 @@ The [`default.nix`](default.nix) file in this repository also defines the nix fu
   };
 ```
 
+You can also represent in nix all the thunks of a given directory
+```nix
+let sources = nix-thunk.mapSubdirectories nix-thunk.thunkSource ./dep;
+```
+```nix
+{ which = self.callCabal2nix "which" sources.which {}; }
+```
+
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change. See the [contribution guide](CONTRIBUTING.md) for more details.
 
