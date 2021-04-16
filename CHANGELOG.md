@@ -1,5 +1,10 @@
 # Revision history for nix-thunk
 
+## 0.3.0.0
+
+* Fix readThunk when thunk is checked out [#4](https://github.com/obsidiansystems/nix-thunk/pull/4)
+* Fix removal of .git from default destination [#10](https://github.com/obsidiansystems/nix-thunk/pull/10)
+
 ## 0.2.0.3
 
 * Default to GHC 8.8.4 and update dependency bounds
