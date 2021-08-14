@@ -46,7 +46,7 @@ in rec {
     overrides = self: super: {
       which = self.callCabal2nix "which" (thunkSource ./dep/which) {};
       cli-extras = self.callCabal2nix "cli-extras" (thunkSource ./dep/cli-extras) {};
-      cli-nix = self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {};
+      cli-nix = (import (thunkSource ./dep/cli-nix + "/overlays.nix")).cli-nix pkgs self;
       cli-git = pkgs.haskell.lib.overrideCabal (self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {}) {
         librarySystemDepends = with pkgs; [
           git
