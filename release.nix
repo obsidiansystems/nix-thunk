@@ -3,6 +3,7 @@ let versions = [
       { nixpkgs = "nixos-20.03"; compiler = "ghc884"; }
       { nixpkgs = "nixos-20.09"; compiler = "ghc865"; }
       { nixpkgs = "nixos-20.09"; compiler = "ghc884"; }
+      { nixpkgs = "nixos-21.05"; compiler = "ghc884"; }
       { nixpkgs = "nixpkgs-unstable"; compiler = "ghc884"; }
       { nixpkgs = "master"; compiler = "ghc884"; }
     ];

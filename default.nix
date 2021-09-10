@@ -1,4 +1,4 @@
-{ pkgs ? import ./dep/ci/nixos-20.03 {}
+{ pkgs ? import ./dep/ci/nixos-21.05 {}
 , ghc ? "ghc884"
 }:
 
