@@ -6,6 +6,7 @@ with pkgs.haskell.lib;
 
 let
   inherit (pkgs) lib;
+  noTest = pkg: pkgs.haskell.lib.dontCheck pkg;
 
 in rec {
   haskellPackages = pkgs.haskell.packages."${ghc}".override {
@@ -50,11 +51,11 @@ in rec {
         ver = "0.11.1";
         sha256 = "1xsh4mcrmgiavgnkb5bg5lzxj1546525ffxjms3rlagf4jh9sn1i";
       } {};
-      time-compat = self.callHackageDirect {
+      time-compat = noTest (self.callHackageDirect {
         pkg = "time-compat";
         ver = "1.9.5";
         sha256 = "0xy044x713bbvl8i1180bnccn60ji1n7mw1scs9ydy615bgwr82c";
-      } {};
+      } {});
       ansi-terminal = self.callHackageDirect {
         pkg = "ansi-terminal";
         ver = "0.9.1";
