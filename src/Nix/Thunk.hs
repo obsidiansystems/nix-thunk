@@ -616,7 +616,7 @@ gitHubThunkSpecV4 = legacyGitHubThunkSpec "github-v4" $ T.unlines
   , "  };"
   , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
   ]
-  
+
 legacyGitHubThunkSpec :: Text -> Text -> ThunkSpec
 legacyGitHubThunkSpec name loader = ThunkSpec name $ Map.fromList
   [ ("default.nix", ThunkFileSpec_FileMatches $ T.strip loader)
@@ -624,7 +624,7 @@ legacyGitHubThunkSpec name loader = ThunkSpec name $ Map.fromList
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
   , (".git", ThunkFileSpec_CheckoutIndicator)
   ]
-  
+
 gitHubThunkSpecV5 :: ThunkSpec
 gitHubThunkSpecV5 = mkThunkSpec "github-v5" "github.json" parseGitHubJsonBytes [here|
 # DO NOT HAND-EDIT THIS FILE
@@ -638,13 +638,17 @@ let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256
 in fetch json
 |]
 
+-- | Specification for GitHub thunks which use a specific, pinned
+-- version of nixpkgs for fetching, rather than using @<nixpkgs>@ from
+-- @NIX_PATH@. The "v6" specs ensure that thunks can be fetched even
+-- when @NIX_PATH@ is unset.
 gitHubThunkSpecV6 :: ThunkSpec
 gitHubThunkSpecV6 = mkThunkSpec "github-v6" "github.json" parseGitHubJsonBytes [here|
 # DO NOT HAND-EDIT THIS FILE
 let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
   if !fetchSubmodules && !private then builtins.fetchTarball {
     url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz"; inherit sha256;
-  } else (builtins.fetchTarball { 
+  } else (builtins.fetchTarball {
   url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
   sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
 }).fetchFromGitHub {
@@ -747,6 +751,10 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
 in fetch json
 |]
 
+-- | Specification for Git thunks which use a specific, pinned version
+-- of nixpkgs for fetching, rather than using @<nixpkgs>@ from
+-- @NIX_PATH@. The "v6" specs ensure that thunks can be fetched even
+-- when @NIX_PATH@ is unset.
 gitThunkSpecV6 :: ThunkSpec
 gitThunkSpecV6 = mkThunkSpec "git-v6" "git.json" parseGitJsonBytes [here|
 # DO NOT HAND-EDIT THIS FILE
@@ -758,7 +766,7 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
   in if !fetchSubmodules && private then builtins.fetchGit {
     url = realUrl; inherit rev;
     ${if branch == null then null else "ref"} = branch;
-  } else (builtins.fetchTarball { 
+  } else (builtins.fetchTarball {
   url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
   sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
 }).fetchgit {

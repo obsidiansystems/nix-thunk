@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.4.0.0
+
+* The default thunk specification ("v6") now uses a pinned version of nixpkgsk, rather than the magic `<nixpkgs>`, for fetching thunks. This ensures that thunks can be fetched even in an environment where `NIX_PATH` is unset.
+
 ## 0.3.0.0
 
 * Fix readThunk when thunk is checked out [#4](https://github.com/obsidiansystems/nix-thunk/pull/4)
