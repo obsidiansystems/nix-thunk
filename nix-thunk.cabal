@@ -1,9 +1,9 @@
 cabal-version:      >=1.10
 name:               nix-thunk
-version:            0.3.0.0
+version:            0.4.0.0
 license:            BSD3
 license-file:       LICENSE
-copyright:          Obsidian Systems LLC 2020
+copyright:          Obsidian Systems LLC 2020-2022
 maintainer:         maintainer@obsidian.systems
 author:             Obsidian Systems LLC
 bug-reports:        https://github.com/obsidiansystems/nix-thunk
