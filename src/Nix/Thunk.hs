@@ -551,8 +551,9 @@ setThunk thunkConfig target gs branch = do
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubThunkSpecs :: NonEmpty ThunkSpec
 gitHubThunkSpecs =
-  gitHubThunkSpecV6 :|
-  [ gitHubThunkSpecV5
+  gitHubThunkSpecV7 :|
+  [ gitHubThunkSpecV6
+  , gitHubThunkSpecV5
   , gitHubThunkSpecV4
   , gitHubThunkSpecV3
   , gitHubThunkSpecV2
@@ -627,10 +628,11 @@ let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256
 in fetch json
 |]
 
--- | Specification for GitHub thunks which use a specific, pinned
--- version of nixpkgs for fetching, rather than using @<nixpkgs>@ from
--- @NIX_PATH@. The "v6" specs ensure that thunks can be fetched even
--- when @NIX_PATH@ is unset.
+-- | See 'gitHubThunkSpecV7'.
+--
+-- __NOTE__: v6 spec thunks are broken! They import the pinned nixpkgs
+-- in an incorrect way. GitHub thunks for public repositories with no
+-- submodules will still work, but update as soon as possible.
 gitHubThunkSpecV6 :: ThunkSpec
 gitHubThunkSpecV6 = mkThunkSpec "github-v6" "github.json" parseGitHubJsonBytes [here|
 # DO NOT HAND-EDIT THIS FILE
@@ -647,14 +649,35 @@ let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256
 in fetch json
 |]
 
+-- | Specification for GitHub thunks which use a specific, pinned
+-- version of nixpkgs for fetching, rather than using @<nixpkgs>@ from
+-- @NIX_PATH@. The "v7" specs ensure that thunks can be fetched even
+-- when @NIX_PATH@ is unset.
+gitHubThunkSpecV7 :: ThunkSpec
+gitHubThunkSpecV7 = mkThunkSpec "github-v7" "github.json" parseGitHubJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
+  if !fetchSubmodules && !private then builtins.fetchTarball {
+    url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz"; inherit sha256;
+  } else (import (builtins.fetchTarball {
+  url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+  sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+}) {}).fetchFromGitHub {
+    inherit owner repo rev sha256 fetchSubmodules private;
+  };
+  json = builtins.fromJSON (builtins.readFile ./github.json);
+in fetch json
+|]
+
 parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
 parseGitHubJsonBytes = parseJsonObject $ parseThunkPtr $ \v ->
   ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
 
 gitThunkSpecs :: NonEmpty ThunkSpec
 gitThunkSpecs =
-  gitThunkSpecV6 :|
-  [ gitThunkSpecV5
+  gitThunkSpecV7 :|
+  [ gitThunkSpecV6
+  , gitThunkSpecV5
   , gitThunkSpecV4
   , gitThunkSpecV3
   , gitThunkSpecV2
@@ -740,10 +763,10 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
 in fetch json
 |]
 
--- | Specification for Git thunks which use a specific, pinned version
--- of nixpkgs for fetching, rather than using @<nixpkgs>@ from
--- @NIX_PATH@. The "v6" specs ensure that thunks can be fetched even
--- when @NIX_PATH@ is unset.
+-- | See 'gitThunkSpecV7'.
+-- __NOTE__: v6 spec thunks are broken! They import the pinned nixpkgs
+-- in an incorrect way. GitHub thunks for public repositories with no
+-- submodules will still work, but update as soon as possible.
 gitThunkSpecV6 :: ThunkSpec
 gitThunkSpecV6 = mkThunkSpec "git-v6" "git.json" parseGitJsonBytes [here|
 # DO NOT HAND-EDIT THIS FILE
@@ -759,6 +782,31 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
   url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
   sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
 }).fetchgit {
+    url = realUrl; inherit rev sha256;
+  };
+  json = builtins.fromJSON (builtins.readFile ./git.json);
+in fetch json
+|]
+
+-- | Specification for Git thunks which use a specific, pinned version
+-- of nixpkgs for fetching, rather than using @<nixpkgs>@ from
+-- @NIX_PATH@. The "v7" specs ensure that thunks can be fetched even
+-- when @NIX_PATH@ is unset.
+gitThunkSpecV7 :: ThunkSpec
+gitThunkSpecV7 = mkThunkSpec "git-v7" "git.json" parseGitJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
+  let realUrl = let firstChar = builtins.substring 0 1 url; in
+    if firstChar == "/" then /. + url
+    else if firstChar == "." then ./. + url
+    else url;
+  in if !fetchSubmodules && private then builtins.fetchGit {
+    url = realUrl; inherit rev;
+    ${if branch == null then null else "ref"} = branch;
+  } else (import (builtins.fetchTarball {
+  url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+  sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+}) {}).fetchgit {
     url = realUrl; inherit rev sha256;
   };
   json = builtins.fromJSON (builtins.readFile ./git.json);
