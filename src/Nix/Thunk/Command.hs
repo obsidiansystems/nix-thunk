@@ -64,7 +64,7 @@ thunkCommand = hsubparser $ mconcat
 
 runThunkCommand
   :: ( MonadLog Output m
-     , HasCliConfig m
+     , HasCliConfig NixThunkError m
      , MonadIO m
      , MonadMask m
      , MonadError NixThunkError m
