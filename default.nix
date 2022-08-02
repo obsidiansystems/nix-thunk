@@ -13,7 +13,11 @@ in rec {
       which = self.callCabal2nix "which" (thunkSource ./dep/which) {};
       cli-extras = self.callCabal2nix "cli-extras" (thunkSource ./dep/cli-extras) {};
       cli-nix = self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {};
-      cli-git = self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {};
+      cli-git = pkgs.haskell.lib.overrideCabal (self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {}) {
+        librarySystemDepends = with pkgs; [
+          git
+        ];
+      };
       github = self.callCabal2nix "github" (thunkSource ./dep/github) {};
       logging-effect = self.callHackageDirect {
         pkg = "logging-effect";

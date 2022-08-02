@@ -30,6 +30,7 @@ module Nix.Thunk
   , ThunkPackConfig (..)
   , ThunkConfig (..)
   , updateThunkToLatest
+  , updateThunk
   , ThunkUpdateConfig (..)
   , unpackThunk
   , ThunkSpec (..)
@@ -109,7 +110,7 @@ import qualified Text.URI as URI
 
 type MonadInfallibleNixThunk m =
   ( CliLog m
-  , HasCliConfig m
+  , HasCliConfig NixThunkError m
   , MonadIO m
   , MonadMask m
   )
@@ -126,7 +127,8 @@ data NixThunkError
 
 prettyNixThunkError :: NixThunkError -> Text
 prettyNixThunkError = \case
-  NixThunkError_ProcessFailure pf -> prettyProcessFailure pf
+  NixThunkError_ProcessFailure (ProcessFailure p code) ->
+    "Process exited with code " <> T.pack (show code) <> "; " <> reconstructCommand p
   NixThunkError_Unstructured msg -> msg
 
 makePrisms ''NixThunkError
@@ -247,11 +249,6 @@ forgetGithub useSsh s = GitSource
   , _gitSource_fetchSubmodules = False
   , _gitSource_private = _gitHubSource_private s
   }
-
-getThunkGitBranch :: ThunkPtr -> Maybe Text
-getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
-  ThunkSource_GitHub s -> _gitHubSource_branch s
-  ThunkSource_Git s -> _gitSource_branch s
 
 commitNameToRef :: Name Commit -> Ref SHA1
 commitNameToRef (N c) = refFromHex $ encodeUtf8 c
@@ -519,14 +516,6 @@ createThunk target ptrInfo =
       putLog Debug $ "Writing thunk file " <> T.pack fullPath
       liftIO $ createDirectoryIfMissing True $ takeDirectory fullPath
       f fullPath
-
-createThunkWithLatest :: MonadNixThunk m => FilePath -> ThunkSource -> m ()
-createThunkWithLatest target s = do
-  rev <- getLatestRev s
-  createThunk target $ Right $ ThunkPtr
-    { _thunkPtr_source = s
-    , _thunkPtr_rev = rev
-    }
 
 updateThunkToLatest :: MonadNixThunk m => ThunkUpdateConfig -> FilePath -> m ()
 updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
@@ -804,7 +793,7 @@ parseJsonObject p bytes = Aeson.parseEither p =<< Aeson.eitherDecode bytes
 nixBuildThunkAttrWithCache
   :: ( MonadIO m
      , MonadLog Output m
-     , HasCliConfig m
+     , HasCliConfig NixThunkError m
      , MonadMask m
      , MonadError NixThunkError m
      , MonadFail m
@@ -856,7 +845,7 @@ nixBuildThunkAttrWithCache thunkSpec thunkDir attr = do
 -- | Build a nix attribute, and cache the result if possible
 nixBuildAttrWithCache
   :: ( MonadLog Output m
-     , HasCliConfig m
+     , HasCliConfig NixThunkError m
      , MonadIO m
      , MonadMask m
      , MonadError NixThunkError m
