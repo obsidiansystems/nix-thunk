@@ -1,5 +1,10 @@
 # Revision history for nix-thunk
 
+## 0.5.0.0
+
+* Fix a critical bug where v6 thunks can not be used to fetch non-GitHub repositories. Please update all your thunks to use the new v7 thunk spec.
+  Updating your thunk can be done by running `nix-thunk unpack $path; nix-thunk pack $path`.
+
 ## 0.4.0.0
 
 * The default thunk specification ("v6") now uses a pinned version of nixpkgs, rather than the magic `<nixpkgs>`, for fetching thunks. This ensures that thunks can be fetched even in an environment where `NIX_PATH` is unset.
