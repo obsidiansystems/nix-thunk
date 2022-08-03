@@ -14,4 +14,4 @@ in
   builtins.listToAttrs (map (v: lib.nameValuePair (mkName v) (import ./. {
     ghc = v.compiler;
     pkgs = import (./dep/ci + "/${v.nixpkgs}") {};
-  }).command) versions) // { tests = import ./tests {} }
+  }).command) versions) // { tests = import ./tests.nix {}; }
