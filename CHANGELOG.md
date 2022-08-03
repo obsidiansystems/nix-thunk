@@ -4,6 +4,7 @@
 
 * Fix a critical bug where v6 thunks can not be used to fetch non-GitHub repositories. Please update all your thunks to use the new v7 thunk spec.
   Updating your thunk can be done by running `nix-thunk unpack $path; nix-thunk pack $path`.
+* Building a functional `nix-thunk` _must_ be done using the included Nix derivation.
 
 ## 0.4.0.0
 

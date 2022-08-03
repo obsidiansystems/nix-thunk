@@ -1,6 +1,6 @@
 name: github-action
 
-on: [push, pull_request] 
+on: [push, pull_request]
 
 jobs:
   build:
@@ -33,7 +33,9 @@ jobs:
       run: |
         cabal update
         cabal build --only-dependencies --enable-tests --enable-benchmarks
+        echo -e "#!/bin/sh\necho \"CI build\"" >> print-nixpkgs-path
+        chmod 755 print-nixpkgs-path
     - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
+      run: env PATH=.:$PATH cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
-      run: cabal test all
+      run: env PATH=.:$PATH cabal test all
