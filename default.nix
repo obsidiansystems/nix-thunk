@@ -6,8 +6,42 @@ with pkgs.haskell.lib;
 
 let
   inherit (pkgs) lib;
-
+  pinnedNixpkgs = builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+    sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+  };
 in rec {
+  # Override a nix-thunk Cabal package so it knows where nixpkgs is.
+  # This function is exported so that it can be used by downstream
+  # consumers of nix-thunk as a library (e.g. Obelisk).
+  makeRunnableNixThunk = pkg: pkgs.haskell.lib.overrideCabal pkg {
+    librarySystemDepends = with pkgs; [
+      # The correct reaction to this code is "what", followed by
+      # some rather choice words about its author. The answer to
+      # "what":
+      # We need a known-good nixpkgs to be included in nix-thunk's
+      # closure *and* we need to know its path at compile time. The
+      # solution is to generate a tiny, tiny shell script that just
+      # prints the path to that nixpkgs; Nix takes care of making
+      # sure it's a dependency.
+      (writeTextFile {
+        name = "print-nixpkgs-path";
+        text = ''
+          #!/bin/sh
+          echo "${pinnedNixpkgs}"
+        '';
+        executable = true;
+        destination = "/bin/print-nixpkgs-path";
+      })
+      # You can verify that the nixpkgs was included by doing
+      #
+      #  $ nix-build default.nix -A command
+      #  $ nix path-info -rsSh ./result | grep -source
+      #
+      # and seeing that the closure includes a ~100MiB nixpkgs path.
+    ];
+  };
+
   haskellPackages = pkgs.haskell.packages."${ghc}".override {
     overrides = self: super: {
       which = self.callCabal2nix "which" (thunkSource ./dep/which) {};
@@ -64,7 +98,7 @@ in rec {
         ver = "0.9.1";
         sha256 = "152lnv339fg8nacvyhxjfy2ylppc33ckb6qrgy0vzanisi8pgcvd";
       } {};
-      nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
+      nix-thunk = makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {});
     };
   };
 

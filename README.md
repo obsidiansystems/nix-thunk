@@ -21,6 +21,8 @@ nix-thunk does this by creating and managing "thunks" - directories that stand i
 nix-env -f https://github.com/obsidiansystems/nix-thunk/archive/master.tar.gz -iA command
 ```
 
+**WARNING**: It is _not_ possible to compile `nix-thunk` without Nix. To ensure that packed thunks are buildable even in environments where diamond paths are unavailable (specifically `<nixpkgs>`), `nix-thunk` _must_ be built with knowledge of a known-good nixpkgs, _and_ for `nix-thunk` to be able to manipulate these thunks, it must _always_ be the same version of nixpkgs.
+
 ## Command Usage
 
 ### Create a dependency
