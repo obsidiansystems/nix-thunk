@@ -1,6 +1,6 @@
 cabal-version:      >=1.10
 name:               nix-thunk
-version:            0.5.0.0
+version:            0.5.1.0
 license:            BSD3
 license-file:       LICENSE
 copyright:          Obsidian Systems LLC 2020-2022

@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.5.1.0
+
+* Bump to cli-nix 0.2.0.0; This ensures that `nix-prefetch-git` can always be found.
+
 ## 0.5.0.0
 
 * Fix a critical bug where v6 thunks can not be used to fetch non-GitHub repositories. Please update all your thunks to use the new v7 thunk spec.
