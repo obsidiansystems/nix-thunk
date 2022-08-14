@@ -134,7 +134,7 @@ in rec {
           || throw "Thunk at ${toString p} has files in addition to ${name} and optionally default.nix and .attr-cache. Remove either ${name} or those other files to continue (check for leftover .git too)."
         else false;
     in
-      if isObeliskThunkWithThunkNix then import (p + /thunk.nix)
+      if isObeliskThunkWithThunkNix then import (p + "/thunk.nix")
       else if hasValidThunk "git.json" then (
         let gitArgs = filterArgs (builtins.fromJSON (builtins.readFile (p + "/git.json")));
         in if builtins.elem "@" (lib.stringToCharacters gitArgs.url)
