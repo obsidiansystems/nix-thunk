@@ -10,6 +10,30 @@ let
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
+
+  privateKeyFile = pkgs.writeText "id_rsa" ''${snakeOilPrivateKey}'';
+
+  thunkableSample = pkgs.writeText "default.nix" ''
+    let pkgs = import <nixpkgs> {}; in pkgs.git
+  '';
+
+  sshConfigFile = pkgs.writeText "ssh_config" ''
+    Host *
+      StrictHostKeyChecking no
+      UserKnownHostsFile=/dev/null
+      ConnectionAttempts=1
+      ConnectTimeout=1
+      IdentityFile=~/.ssh/id_rsa
+      User=root
+  '';
+
+  # This is the version of nixpkgs that we use in thunks. It needs to be
+  # included in the VM so that builtin.fetchgit succeeds without a
+  # network connection.
+  ourNixpkgs = builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+    sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+  };
 in
   make-test ({...}: {
     name  = "nix-thunk";
@@ -28,37 +52,27 @@ in
       };
 
       client = {
-        imports = [
-          (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix)
-        ];
+        imports = [ (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix) ];
         nix.useSandbox = false;
         nix.binaryCaches = [];
         environment.systemPackages = [
-          pkgs.nix-prefetch-git
-          nix-thunk.command
-          pkgs.git
+          pkgs.nix-prefetch-git nix-thunk.command pkgs.git ourNixpkgs
         ];
+      };
+
+      # This machine is used for testing that thunks can be built if
+      # your nix-thunk is weird, wacky, dead, or not present at all. The
+      # GCD of those failure modes is "not present at all", thus:
+      noNixThunk = {
+        imports = [ (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix) ];
+        nix.useSandbox = false;
+        nix.binaryCaches = [];
+        environment.systemPackages = [ pkgs.git ourNixpkgs ];
       };
     };
 
     testScript =
       let
-        privateKeyFile = pkgs.writeText "id_rsa" ''${snakeOilPrivateKey}'';
-        thunkableSample = pkgs.writeText "default.nix" ''
-          let pkgs = import <nixpkgs> {}; in pkgs.git
-        '';
-        invalidThunkableSample = pkgs.writeText "default.nix" ''
-          let pkgs = import <nixpkgs> {}; in pkgtypo.git
-        '';
-        sshConfigFile = pkgs.writeText "ssh_config" ''
-          Host *
-            StrictHostKeyChecking no
-            UserKnownHostsFile=/dev/null
-            ConnectionAttempts=1
-            ConnectTimeout=1
-            IdentityFile=~/.ssh/id_rsa
-            User=root
-        '';
       in ''
       start_all()
 
@@ -69,19 +83,22 @@ in
 
       githost.wait_for_open_port("22")
 
-      with subtest("the client can access the server via ssh"):
-        client.succeed("mkdir -p ~/.ssh/")
-        client.succeed("cp ${privateKeyFile} ~/.ssh/id_rsa")
-        client.succeed("chmod 600 ~/.ssh/id_rsa")
-        client.wait_until_succeeds(
-          "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa githost true"
-        )
-        client.succeed("cp ${sshConfigFile} ~/.ssh/config")
-        client.wait_until_succeeds("ssh githost true")
+      with subtest("the clients can access the server via ssh"):
+        for machine in [client, noNixThunk]:
+          machine.succeed("mkdir -p ~/.ssh/")
+          machine.succeed("cp ${privateKeyFile} ~/.ssh/id_rsa")
+          machine.succeed("chmod 600 ~/.ssh/id_rsa")
+          machine.wait_until_succeeds(
+            "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa githost true"
+          )
+          machine.succeed("cp ${sshConfigFile} ~/.ssh/config")
+          machine.wait_until_succeeds("ssh githost true")
 
       with subtest("a remote bare repo can be started"):
         githost.succeed("mkdir -p ~/myorg/myapp.git")
+        githost.succeed("mkdir -p ~/myorg/packed-thunk.git")
         githost.succeed("cd ~/myorg/myapp.git && git init --bare")
+        githost.succeed("cd ~/myorg/packed-thunk.git && git init --bare")
 
       with subtest("a git project can be configured with a remote using ssh"):
         client.succeed("mkdir -p ~/code/myapp")
@@ -141,5 +158,28 @@ in
         client.succeed("nix-thunk update ~/code/myapp-local")
         client.succeed("nix-thunk unpack ~/code/myapp-local")
         client.succeed("test -f ~/code/myapp-local/test-file")
+
+      # This test is a bit... dirty. We can't create the thunk on
+      # 'noNixThunk', that's the whole point. We can't create the thunk
+      # in this nix file, because [mumble] nix-prefetch-git doesn't work
+      # inside the sandbox. But you know what we *can* do? Move the
+      # thunk from one machine to the other. And since we already have
+      # Git...
+      with subtest("packed thunks can be built without nix-thunk"):
+        client.succeed("nix-thunk pack ~/code/myapp-remote")
+        client.succeed("""
+          cd ~/code/myapp-remote;
+          git init;
+          git add -A;
+          git commit -am "Add thunk files";
+          git remote add origin root@githost:/root/myorg/packed-thunk.git;
+          git push -u origin master;
+        """)
+        noNixThunk.succeed("""
+          git clone root@githost:/root/myorg/packed-thunk.git;
+          cd packed-thunk;
+          rm -rf .git;
+        """)
+        noNixThunk.succeed("nix-build packed-thunk")
       '';
   }) {}

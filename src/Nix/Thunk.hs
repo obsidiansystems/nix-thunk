@@ -103,8 +103,6 @@ import System.IO.Error (isDoesNotExistError)
 import System.IO.Temp
 import System.Posix.Files
 import qualified Text.URI as URI
-import Language.Haskell.TH (Exp(LitE), Lit(StringL), runIO)
-import qualified System.Process as P
 
 --------------------------------------------------------------------------------
 -- Hacks
@@ -300,15 +298,10 @@ attrCacheFileName :: FilePath
 attrCacheFileName = ".attr-cache"
 
 -- | A path from which our known-good nixpkgs can be fetched.
--- @print-nixpkgs-path@ is a shell script whose only purpose is to print
--- that path. It is generated and included in the build dependencies of
--- nix-thunk by our default.nix.
+-- __NOTE__: This path is hardcoded, and only exists so subsumed thunk
+-- specs (v7 specifically) can be parsed.
 pinnedNixpkgsPath :: FilePath
-pinnedNixpkgsPath =
-  $(do
-    p <- fmap init . runIO $ P.readCreateProcess (P.shell "print-nixpkgs-path") ""
-    pure $ LitE $ StringL $ p
-  )
+pinnedNixpkgsPath = "/nix/store/qjg458n31xk1l6lj26c3b871d4i4is98-source"
 
 -- | Specification for how a file in a thunk version works.
 data ThunkFileSpec
@@ -564,8 +557,9 @@ setThunk thunkConfig target gs branch = do
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubThunkSpecs :: NonEmpty ThunkSpec
 gitHubThunkSpecs =
-  gitHubThunkSpecV7 :|
-  [ gitHubThunkSpecV6
+  gitHubThunkSpecV8 :|
+  [ gitHubThunkSpecV7
+  , gitHubThunkSpecV6
   , gitHubThunkSpecV5
   , gitHubThunkSpecV4
   , gitHubThunkSpecV3
@@ -677,14 +671,38 @@ let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256
   json = builtins.fromJSON (builtins.readFile ./github.json);
 in fetch json|]
 
+-- | Specification for GitHub thunks which use a specific, pinned
+-- version of nixpkgs for fetching, rather than using @<nixpkgs>@ from
+-- @NIX_PATH@.
+--
+-- Unlike 'gitHubThunKSpecV7', this thunk specification fetches the
+-- nixpkgs tarball from GitHub, so it will fail on environments without
+-- a network connection.
+gitHubThunkSpecV8 :: ThunkSpec
+gitHubThunkSpecV8 = mkThunkSpec "github-v8" "github.json" parseGitHubJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
+  if !fetchSubmodules && !private then builtins.fetchTarball {
+    url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz"; inherit sha256;
+  } else (import (builtins.fetchTarball {
+  url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+  sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+}) {}).fetchFromGitHub {
+    inherit owner repo rev sha256 fetchSubmodules private;
+  };
+  json = builtins.fromJSON (builtins.readFile ./github.json);
+in fetch json
+|]
+
 parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
 parseGitHubJsonBytes = parseJsonObject $ parseThunkPtr $ \v ->
   ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
 
 gitThunkSpecs :: NonEmpty ThunkSpec
 gitThunkSpecs =
-  gitThunkSpecV7 :|
-  [ gitThunkSpecV6
+  gitThunkSpecV8 :|
+  [ gitThunkSpecV7
+  , gitThunkSpecV6
   , gitThunkSpecV5
   , gitThunkSpecV4
   , gitThunkSpecV3
@@ -811,6 +829,32 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
     url = realUrl; inherit rev;
     \${if branch == null then null else "ref"} = branch;
   } else (import ${pinnedNixpkgsPath} {}).fetchgit {
+    url = realUrl; inherit rev sha256;
+  };
+  json = builtins.fromJSON (builtins.readFile ./git.json);
+in fetch json|]
+
+-- | Specification for Git thunks which use a specific, pinned version
+-- version of nixpkgs for fetching, rather than using @<nixpkgs>@ from
+-- @NIX_PATH@.
+--
+-- Unlike 'gitHubThunKSpecV7', this thunk specification fetches the
+-- nixpkgs tarball from GitHub, so it will fail on environments without
+-- a network connection.
+gitThunkSpecV8 :: ThunkSpec
+gitThunkSpecV8 = mkThunkSpec "git-v7" "git.json" parseGitJsonBytes [i|# DO NOT HAND-EDIT THIS FILE
+let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
+  let realUrl = let firstChar = builtins.substring 0 1 url; in
+    if firstChar == "/" then /. + url
+    else if firstChar == "." then ./. + url
+    else url;
+  in if !fetchSubmodules && private then builtins.fetchGit {
+    url = realUrl; inherit rev;
+    \${if branch == null then null else "ref"} = branch;
+  } else (import (builtins.fetchTarball {
+  url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+  sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+}) {}).fetchgit {
     url = realUrl; inherit rev sha256;
   };
   json = builtins.fromJSON (builtins.readFile ./git.json);
