@@ -30,10 +30,7 @@ let
   # This is the version of nixpkgs that we use in thunks. It needs to be
   # included in the VM so that builtin.fetchgit succeeds without a
   # network connection.
-  ourNixpkgs = builtins.fetchTarball {
-    url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
-    sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
-  };
+  ourNixpkgs = nix-thunk.packedThunkNixpkgs;
 in
   make-test ({...}: {
     name  = "nix-thunk";
@@ -43,9 +40,7 @@ in
         services.openssh = {
           enable = true;
         };
-        environment.systemPackages = [
-          pkgs.git
-        ];
+        environment.systemPackages = [ pkgs.git ];
         users.users.root.openssh.authorizedKeys.keys = [
           snakeOilPublicKey
         ];
@@ -56,7 +51,7 @@ in
         nix.useSandbox = false;
         nix.binaryCaches = [];
         environment.systemPackages = [
-          pkgs.nix-prefetch-git nix-thunk.command pkgs.git ourNixpkgs
+          pkgs.nix-prefetch-git nix-thunk.command pkgs.git pkgs.rsync ourNixpkgs
         ];
       };
 
@@ -67,7 +62,7 @@ in
         imports = [ (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix) ];
         nix.useSandbox = false;
         nix.binaryCaches = [];
-        environment.systemPackages = [ pkgs.git ourNixpkgs ];
+        environment.systemPackages = [ pkgs.git pkgs.rsync ourNixpkgs ];
       };
     };
 
@@ -96,9 +91,7 @@ in
 
       with subtest("a remote bare repo can be started"):
         githost.succeed("mkdir -p ~/myorg/myapp.git")
-        githost.succeed("mkdir -p ~/myorg/packed-thunk.git")
         githost.succeed("cd ~/myorg/myapp.git && git init --bare")
-        githost.succeed("cd ~/myorg/packed-thunk.git && git init --bare")
 
       with subtest("a git project can be configured with a remote using ssh"):
         client.succeed("mkdir -p ~/code/myapp")
@@ -166,20 +159,13 @@ in
       # thunk from one machine to the other. And since we already have
       # Git...
       with subtest("packed thunks can be built without nix-thunk"):
-        client.succeed("nix-thunk pack ~/code/myapp-remote")
         client.succeed("""
-          cd ~/code/myapp-remote;
-          git init;
-          git add -A;
-          git commit -am "Add thunk files";
-          git remote add origin root@githost:/root/myorg/packed-thunk.git;
-          git push -u origin master;
+          nix-thunk pack ~/code/myapp-remote;
+          rsync -avx ~/code/myapp-remote githost:
         """)
         noNixThunk.succeed("""
-          git clone root@githost:/root/myorg/packed-thunk.git;
-          cd packed-thunk;
-          rm -rf .git;
+          rsync -avx githost:myapp-remote .;
+          nix-build myapp-remote
         """)
-        noNixThunk.succeed("nix-build packed-thunk")
       '';
   }) {}
