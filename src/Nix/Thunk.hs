@@ -39,6 +39,7 @@ module Nix.Thunk
   , nixBuildAttrWithCache
   , attrCacheFileName
   , prettyNixThunkError
+  , ThunkCreateSource (..)
   , ThunkCreateConfig (..)
   , parseGitUri
   , GitUri (..)
@@ -218,11 +219,22 @@ data ThunkPackConfig = ThunkPackConfig
   , _thunkPackConfig_config :: ThunkConfig
   } deriving Show
 
+-- | The source to be used for creating thunks.
+data ThunkCreateSource
+  = ThunkCreateSource_Absolute GitUri
+    -- ^ Create a thunk from an absolute reference to a Git repository:
+    -- URIs like @file://@, @https://@, @ssh://@ etc.
+  | ThunkCreateSource_Relative FilePath
+    -- ^ Create a thunk from a local folder. If the folder exists, then
+    -- it is made absolute using the current working directory and
+    -- treated as a @file://@ URL.
+  deriving Show
+
 data ThunkCreateConfig = ThunkCreateConfig
-  { _thunkCreateConfig_uri :: GitUri
-  , _thunkCreateConfig_branch :: Maybe (Name Branch)
-  , _thunkCreateConfig_rev :: Maybe (Ref SHA1)
-  , _thunkCreateConfig_config :: ThunkConfig
+  { _thunkCreateConfig_uri         :: ThunkCreateSource
+  , _thunkCreateConfig_branch      :: Maybe (Name Branch)
+  , _thunkCreateConfig_rev         :: Maybe (Ref SHA1)
+  , _thunkCreateConfig_config      :: ThunkConfig
   , _thunkCreateConfig_destination :: Maybe FilePath
   } deriving Show
 
@@ -494,7 +506,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
 
 createThunk' :: MonadNixThunk m => ThunkCreateConfig -> m ()
 createThunk' config = do
-  newThunkPtr <- uriThunkPtr
+  newThunkPtr <- thunkCreateSourcePtr
     (_thunkCreateConfig_uri config)
     (_thunkConfig_private $ _thunkCreateConfig_config config)
     (untagName <$> _thunkCreateConfig_branch config)
@@ -502,9 +514,15 @@ createThunk' config = do
   let trailingDirectoryName = reverse . takeWhile (/= '/') . dropWhile (=='/') . reverse
       dropDotGit :: FilePath -> FilePath
       dropDotGit origName = fromMaybe origName $ stripExtension "git" origName
+
       defaultDestinationForGitUri :: GitUri -> FilePath
       defaultDestinationForGitUri = dropDotGit . trailingDirectoryName . T.unpack . URI.render . unGitUri
-      destination = fromMaybe (defaultDestinationForGitUri $ _thunkCreateConfig_uri config) $ _thunkCreateConfig_destination config
+
+  destination <- case _thunkCreateConfig_uri config of
+    ThunkCreateSource_Absolute uri -> pure $ fromMaybe (defaultDestinationForGitUri uri) $ _thunkCreateConfig_destination config
+    ThunkCreateSource_Relative _ ->
+      fromMaybe (failWith "When using a relative path as the thunk source, the destination path must be specified.") $
+        fmap pure (_thunkCreateConfig_destination config)
   createThunk destination $ Right newThunkPtr
 
 createThunk :: MonadNixThunk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
@@ -1251,6 +1269,27 @@ uriThunkPtr uri mPrivate mbranch mcommit = do
     { _thunkPtr_rev = rev
     , _thunkPtr_source = src
     }
+
+-- | Convert a 'ThunkCreateSource` to a 'ThunkPtr'.
+thunkCreateSourcePtr
+  :: MonadNixThunk m
+  => ThunkCreateSource  -- ^ Where is the repository?
+  -> Maybe Bool         -- ^ Is it private?
+  -> Maybe Text         -- ^ Shall we fetch a specific branch?
+  -> Maybe Text         -- ^ Shall we check out a specific commit?
+  -> m ThunkPtr
+thunkCreateSourcePtr source mPriv mBranch mCommit = do
+  uri <- case source of
+    ThunkCreateSource_Absolute uri -> pure uri
+    ThunkCreateSource_Relative dir -> do
+      isdir <- liftIO $ doesDirectoryExist dir
+      if isdir
+        then do
+          absolute <- liftIO $ makeAbsolute dir
+          pure $ fromMaybe (error "parsing a file:// URI should never fail") $
+            parseGitUri ("file://" <> T.pack absolute)
+        else failWith $ "Path does not refer to a directory: " <> T.pack dir
+  uriThunkPtr uri mPriv mBranch mCommit
 
 -- | N.B. Cannot infer all fields.
 --
