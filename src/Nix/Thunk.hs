@@ -1160,7 +1160,18 @@ getThunkPtr gitCheckClean dir mPrivate = do
     <- fmap Map.fromList $ forM headDump $ \line -> do
       (branch : restOfLine) <- pure $ T.words line
       mUpstream <- case restOfLine of
-        [] -> pure Nothing
+        [] -> do
+          -- Obelisk issue #792: If this branch has a
+          -- branch.<branch>.merge config Git option, we won't be able
+          -- to use for-each-ref to get its remote. But we can still get
+          -- the remote by piecing toegher "git conifg" output:
+          branchMergeCfg <- readGitProcess thunkDir ["config", "--get-all", T.unpack ("branch." <> branch <> ".merge")]
+          case T.lines branchMergeCfg of
+            [b, _] -> do
+              remote <- T.strip <$> readGitProcess thunkDir ["config", "--get", T.unpack ("branch." <> b <> ".remote")]
+              pure (Just (remote <> T.singleton '/' <> b, remote))
+            -- If it doesn't have that option set then we're SOL
+            _ -> pure Nothing
         [u, r] -> pure $ Just (u, r)
         (_:_) -> failWith "git for-each-ref invalid output"
       pure (branch, mUpstream)
