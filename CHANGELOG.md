@@ -2,7 +2,7 @@
 
 ## 0.6.0.0
 
-* [#33](https://github.com/obsidiansystems/nix-thunk/pull/33) Fix an
+* [#34](https://github.com/obsidiansystems/nix-thunk/pull/34) Fix an
   issue where thunks could not be fetched without `nix-thunk` (or one of
   its dependents, e.g. `obelisk`) being installed. Please update all
   your thunks to use the new v8 thunk spec.
