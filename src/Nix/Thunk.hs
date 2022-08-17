@@ -526,7 +526,12 @@ createThunk' config = do
   createThunk destination $ Right newThunkPtr
 
 createThunk :: MonadNixThunk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
-createThunk target ptrInfo =
+createThunk target ptrInfo = do
+  isdir <- liftIO $ doesDirectoryExist target
+  when isdir $ do
+    isempty <- null <$> liftIO (listDirectory target)
+    unless isempty $ failWith $ "Refusing to create thunk in non-empty directory " <> T.pack target
+
   ifor_ (_thunkSpec_files spec) $ \path -> \case
     ThunkFileSpec_FileMatches content -> withReadyPath path $ \p -> liftIO $ T.writeFile p content
     ThunkFileSpec_Ptr _ -> case ptrInfo of
