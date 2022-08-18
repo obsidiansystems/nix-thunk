@@ -1,5 +1,14 @@
 # Revision history for nix-thunk
 
+## 0.6.0.0
+
+* [#34](https://github.com/obsidiansystems/nix-thunk/pull/34) Fix an
+  issue where thunks could not be fetched without `nix-thunk` (or one of
+  its dependents, e.g. `obelisk`) being installed. Please update all
+  your thunks to use the new v8 thunk spec.
+
+  Updating your thunk can be done by running `nix-thunk unpack $path; nix-thunk pack $path`.
+
 ## 0.5.1.0
 
 * Bump to cli-nix 0.2.0.0; This ensures that `nix-prefetch-git` can always be found.

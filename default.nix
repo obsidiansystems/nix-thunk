@@ -4,13 +4,14 @@
 
 with pkgs.haskell.lib;
 
-let
-  inherit (pkgs) lib;
-  pinnedNixpkgs = builtins.fetchTarball {
+let inherit (pkgs) lib; in rec {
+  # The version of nixpkgs that we use for fetching packing thunks (by
+  # themselves). Not to be used for building packages.
+  packedThunkNixpkgs = builtins.fetchTarball {
     url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
     sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
   };
-in rec {
+
   # Override a nix-thunk Cabal package so it knows where nixpkgs is.
   # This function is exported so that it can be used by downstream
   # consumers of nix-thunk as a library (e.g. Obelisk).
@@ -28,7 +29,7 @@ in rec {
         name = "print-nixpkgs-path";
         text = ''
           #!/bin/sh
-          echo "${pinnedNixpkgs}"
+          echo "${packedThunkNixpkgs}"
         '';
         executable = true;
         destination = "/bin/print-nixpkgs-path";
