@@ -195,5 +195,15 @@ in
           rsync -avx githost:myapp-remote .;
           nix-build myapp-remote
         """)
+
+      with subtest("nix-thunk can create from ssh remote, with branch.master.merge set"):
+        client.succeed("""
+          git config --global branch.master.merge master;
+          nix-thunk pack ~/code/myapp;
+          nix-thunk create -b master root@githost:/root/myorg/myapp.git ~/code/myapp-remote-merge-master;
+          diff -u ~/code/myapp/git.json ~/code/myapp-remote-merge-master/git.json;
+          cmp ~/code/myapp/git.json ~/code/myapp-remote-merge-master/git.json;
+          nix-thunk unpack ~/code/myapp
+        """)
       '';
   }) {}
