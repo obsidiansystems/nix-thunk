@@ -1170,7 +1170,8 @@ getThunkPtr gitCheckClean dir mPrivate = do
             [b, _] -> do
               remote <- T.strip <$> readGitProcess thunkDir ["config", "--get", T.unpack ("branch." <> b <> ".remote")]
               pure (Just (remote <> T.singleton '/' <> b, remote))
-            -- If it doesn't have that option set then we're SOL
+            -- If the branch does not have a value for that setting then
+            -- we're out of luck
             _ -> pure Nothing
         [u, r] -> pure $ Just (u, r)
         (_:_) -> failWith "git for-each-ref invalid output"
