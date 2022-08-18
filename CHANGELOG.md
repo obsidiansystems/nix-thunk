@@ -9,6 +9,9 @@
 
   Updating your thunk can be done by running `nix-thunk unpack $path; nix-thunk pack $path`.
 
+* [#35](https://github.com/obsidiansystems/nix-thunk/pull/35) Determine remote using git-config when `branch.<name>.merge` option is set
+  (Fixes [obelisk#792](https://github.com/obsidiansystems/obelisk/issues/792).)
+
 ## 0.5.1.0
 
 * Bump to cli-nix 0.2.0.0; This ensures that `nix-prefetch-git` can always be found.
