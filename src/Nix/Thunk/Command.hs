@@ -10,9 +10,10 @@ import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Log (MonadLog)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Text as T
-import Nix.Thunk
 import Options.Applicative
 import System.FilePath
+
+import Nix.Thunk
 
 thunkConfig :: Parser ThunkConfig
 thunkConfig = ThunkConfig

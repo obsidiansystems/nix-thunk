@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.6.1.0
+
+* [#36](https://github.com/obsidiansystems/nix-thunk/pull/36) Expose the internals of the `nix-thunk` library.
+
 ## 0.6.0.0
 
 * [#34](https://github.com/obsidiansystems/nix-thunk/pull/34) Fix an
