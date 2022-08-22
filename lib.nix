@@ -1,4 +1,9 @@
-{ lib, fetchgit, fetchgitPrivate, gitignoreSource, fetchFromGitHub }:
+{ lib
+, fetchgit
+, fetchgitPrivate
+, gitignoreSource ? (import ./dep/gitignore.nix { inherit (pkgs) lib; }).gitignoreSource
+, fetchFromGitHub
+}:
 rec {
   # Retrieve source that is controlled by the hack-* scripts; it may be either a stub or a checked-out git repo
   thunkSource = p:
