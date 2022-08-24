@@ -1,7 +1,7 @@
 { lib
 , fetchgit
 , fetchgitPrivate
-, gitignoreSource ? (import ./dep/gitignore.nix { inherit (pkgs) lib; }).gitignoreSource
+, gitignoreSource ? (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource
 , fetchFromGitHub
 }:
 rec {
