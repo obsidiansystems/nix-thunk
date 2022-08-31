@@ -1053,7 +1053,8 @@ gitCloneForThunkUnpack gitSrc commit dir = do
     void $ readGitProcess dir ["submodule", "update", "--recursive", "--init"]
 
 -- | Read a git process ignoring the global configuration. This isn't as
--- locked-down as 'isolateGitProc' for usability reasons, but it still
+-- locked-down as 'isolateGitProc' to make sure the Git process can
+-- still interact with the user (e.g. @ssh-askpass@), but it still
 -- ignores enough of the configuration to ensure that thunks are
 -- reproducible.
 readGitProcess :: MonadNixThunk m => FilePath -> [String] -> m Text
