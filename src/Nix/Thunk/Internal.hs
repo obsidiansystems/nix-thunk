@@ -254,7 +254,7 @@ getNixSha256ForUriUnpacked uri =
 nixPrefetchGit :: MonadNixThunk m => GitUri -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
   withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> gitUriToText uri <> " at " <> rev) $ do
-    out <- readProcessAndLogStderr Debug $
+    out <- readProcessAndLogStderr Debug $ ignoreGitConfig $
       proc nixPrefetchGitPath $ filter (/="")
         [ "--url", T.unpack $ gitUriToText uri
         , "--rev", T.unpack rev
@@ -1052,13 +1052,17 @@ gitCloneForThunkUnpack gitSrc commit dir = do
   when (_gitSource_fetchSubmodules gitSrc) $
     void $ readGitProcess dir ["submodule", "update", "--recursive", "--init"]
 
--- | Read a git process ignoring the global configuration. This isn't as
--- locked-down as 'isolateGitProc' to make sure the Git process can
--- still interact with the user (e.g. @ssh-askpass@), but it still
+-- | Read a git process ignoring the global configuration (according to 'ignoreGitConfig').
+readGitProcess :: MonadNixThunk m => FilePath -> [String] -> m Text
+readGitProcess dir = readProcessAndLogOutput (Notice, Notice) . ignoreGitConfig . gitProc dir
+
+-- | Prevent the called process from reading Git configuration. This
+-- isn't as locked-down as 'isolateGitProc' to make sure the Git process
+-- can still interact with the user (e.g. @ssh-askpass@), but it still
 -- ignores enough of the configuration to ensure that thunks are
 -- reproducible.
-readGitProcess :: MonadNixThunk m => FilePath -> [String] -> m Text
-readGitProcess dir = readProcessAndLogOutput (Notice, Notice) . setEnvOverride (envfix <>) . gitProc dir
+ignoreGitConfig :: ProcessSpec -> ProcessSpec
+ignoreGitConfig = setEnvOverride (envfix <>)
   where
     -- Ignore both global (user's) and system (... system-wide) git
     -- configuration.
