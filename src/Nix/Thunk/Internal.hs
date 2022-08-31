@@ -303,6 +303,15 @@ prettyReadThunkError =
   where
     generic = T.pack "The directory did not match any valid thunk specification.\nRun with -v to see why each spec did not match."
 
+-- | Fail due to a 'ReadThunkError' with a standardised error message.
+failReadThunkErrorWhile
+  :: MonadError NixThunkError m
+  => Text
+  -- ^ String describing what we were doing.
+  -> ReadThunkError -- ^ The error
+  -> m a
+failReadThunkErrorWhile what rte = failWith $ "Failure reading thunk " <> what <> ":\n" <> prettyReadThunkError rte
+
 -- | Did we manage to match the thunk directory to one or more known
 -- thunk specs before raising this error?
 didMatchThunkSpec :: ReadThunkError -> Bool
@@ -460,7 +469,7 @@ overwriteThunk :: MonadNixThunk m => FilePath -> ThunkPtr -> m ()
 overwriteThunk target thunk = do
   -- Ensure that this directory is a valid thunk (i.e. so we aren't losing any data)
   readThunk target >>= \case
-    Left e -> failWith $ "Invalid thunk at " <> T.pack target <> prettyReadThunkError e
+    Left e -> failReadThunkErrorWhile "while overwriting" e
     Right _ -> pure ()
 
   --TODO: Is there a safer way to do this overwriting?
@@ -567,7 +576,7 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
     case mBranch of
       Nothing -> do
         (overwrite, ptr) <- readThunk target >>= \case
-          Left err -> failWith ("Thunk update failed: " <> prettyReadThunkError err)
+          Left err -> failReadThunkErrorWhile "during an update" err
           Right c -> case c of
             ThunkData_Packed _ t -> return (target, t)
             ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
@@ -578,7 +587,7 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
           , _thunkPtr_rev = rev
           }
       Just branch -> readThunk target >>= \case
-        Left err -> failWith $ "Thunk update failed: " <> prettyReadThunkError err
+        Left err -> failReadThunkErrorWhile "during an update" err
         Right c -> case c of
           ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
           ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
@@ -1016,7 +1025,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
   return result
   where
     copyThunkToTmp tmpDir thunkDir = readThunk thunkDir >>= \case
-      Left err -> failWith $ "withThunkUnpacked: " <> prettyReadThunkError err
+      Left err -> failReadThunkErrorWhile "during an update" err
       Right ThunkData_Packed{} -> do
         let tmpThunk = tmpDir </> "thunk"
         callProcessAndLogOutput (Notice, Error) $
@@ -1050,7 +1059,7 @@ unpackThunk = unpackThunk' False
 
 unpackThunk' :: MonadNixThunk m => Bool -> FilePath -> m ()
 unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
-  Left err -> failWith [i|Invalid thunk at ${thunkDir}: ${prettyReadThunkError err}|]
+  Left err -> failReadThunkErrorWhile "while unpacking" err
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
   Right (ThunkData_Packed _ tptr) -> do
