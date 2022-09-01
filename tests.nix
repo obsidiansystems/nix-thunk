@@ -196,6 +196,13 @@ in
           nix-build myapp-remote
         """)
 
+      with subtest("nix-thunk informs the user about parse errors"):
+        client.fail("""
+          touch ~/code/myapp-remote/extra-file;
+          nix-thunk unpack ~/code/myapp-remote 2>parse-error
+        """)
+        client.succeed("grep 'extra-file' parse-error")
+
       with subtest("nix-thunk can create from ssh remote, with branch.master.merge set"):
         client.succeed("""
           git config --global branch.master.merge master;

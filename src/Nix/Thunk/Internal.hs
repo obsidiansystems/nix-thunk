@@ -257,17 +257,67 @@ nixPrefetchGit uri rev fetchSubmodules =
       Nothing -> failWith $ "nix-prefetch-git: unrecognized output " <> out
       Just x -> pure x
 
---TODO: Pretty print these
 data ReadThunkError
   = ReadThunkError_UnrecognizedThunk
-  | ReadThunkError_UnrecognizedPaths (NonEmpty FilePath)
+  -- ^ A generic error that can happen while reading a thunk.
+  | ReadThunkError_UnrecognizedPaths (Maybe ThunkSpec) (NonEmpty FilePath)
+  -- ^ The thunk directory has extraneous paths. The 'Maybe' value
+  -- indicates whether we have matched the rest of the files to a valid
+  -- specification, and if so, which specification it was.
   | ReadThunkError_MissingPaths (NonEmpty FilePath)
+  -- ^ The thunk directory has missing paths.
   | ReadThunkError_UnparseablePtr FilePath String
-  | ReadThunkError_FileError IOError
+  -- ^ We could not parse the given file as per the thunk specification.
+  -- The 'String' is a parser-specific error message.
+  | ReadThunkError_FileError FilePath IOError
+  -- ^ We encountered an 'IOError' while reading the given file.
   | ReadThunkError_FileDoesNotMatch FilePath Text
-  | ReadThunkError_UnrecognizedState String
-  | ReadThunkError_AmbiguousPackedState ThunkPtr ThunkPtr
-  deriving (Show)
+  -- ^ We read the given file just fine, but its contents do not match
+  -- what was expected for the specification.
+  | ReadThunkError_AmbiguousPackedState ThunkSpec ThunkSpec
+  -- ^ We parsed two valid thunk specs for this directory.
+
+-- | Pretty-print a 'ReadThunkError' for display to the user
+prettyReadThunkError :: ReadThunkError -> Text
+prettyReadThunkError =
+  \case
+    ReadThunkError_UnrecognizedPaths (Just spec) (f :| fs) ->
+      -- Limit to five unrecognised paths so that the user doesn't get
+      -- utterly spammed:
+      T.unlines ( "The directory matched spec " <> _thunkSpec_name spec <> ", but the following file(s) are extraneous:"
+                : map (("  " <>) . T.pack) (f:take 4 fs))
+      <> if length fs > 5 then "... and " <> T.pack (show (length fs - 4)) <> " others." else mempty
+
+    ReadThunkError_MissingPaths (f :| fs) ->
+      T.unlines $ "The following path(s) are missing from the thunk directory:"
+        :map (("  " <>) . T.pack) (f:fs)
+
+    ReadThunkError_FileError path ioe -> "I/O error while reading the file " <> T.pack path <> ":\n" <> T.pack (show ioe)
+    ReadThunkError_UnparseablePtr path str -> "Syntax error while reading the file " <> T.pack path <> ":\n" <> T.pack str
+    ReadThunkError_FileDoesNotMatch path _ -> "The file " <> T.pack path <> " does not have the right contents for this thunk specification."
+    ReadThunkError_AmbiguousPackedState speca specb ->
+      "The given thunk directory is ambiguous: It matches both " <> _thunkSpec_name speca <> " and " <> _thunkSpec_name specb <> "."
+
+    ReadThunkError_UnrecognizedThunk -> generic
+    ReadThunkError_UnrecognizedPaths{} -> generic
+  where
+    generic = T.pack "The directory did not match any valid thunk specification.\nRun with -v to see why each spec did not match."
+
+-- | Fail due to a 'ReadThunkError' with a standardised error message.
+failReadThunkErrorWhile
+  :: MonadError NixThunkError m
+  => Text
+  -- ^ String describing what we were doing.
+  -> ReadThunkError -- ^ The error
+  -> m a
+failReadThunkErrorWhile what rte = failWith $ "Failure reading thunk " <> what <> ":\n" <> prettyReadThunkError rte
+
+-- | Did we manage to match the thunk directory to one or more known
+-- thunk specs before raising this error?
+didMatchThunkSpec :: ReadThunkError -> Bool
+didMatchThunkSpec (ReadThunkError_UnrecognizedPaths x _) = isJust x
+didMatchThunkSpec ReadThunkError_AmbiguousPackedState{} = True
+didMatchThunkSpec _ = False
 
 unpackedDirName :: FilePath
 unpackedDirName = "."
@@ -311,19 +361,15 @@ matchThunkSpecToDir thunkSpec dir dirFiles = do
   case isCheckout of
     True -> pure ThunkData_Checkout
     False -> do
-      for_ (nonEmpty (toList $ dirFiles `Set.difference` expectedPaths)) $ \fs ->
-        throwError $ ReadThunkError_UnrecognizedPaths $ (dir </>) <$> fs
-      for_ (nonEmpty (toList $ requiredPaths `Set.difference` dirFiles)) $ \fs ->
-        throwError $ ReadThunkError_MissingPaths $ (dir </>) <$> fs
       datas <- fmap toList $ flip Map.traverseMaybeWithKey (_thunkSpec_files thunkSpec) $ \expectedPath -> \case
         ThunkFileSpec_AttrCache -> Nothing <$ dirMayExist expectedPath
         ThunkFileSpec_CheckoutIndicator -> pure Nothing -- Handled above
-        ThunkFileSpec_FileMatches expectedContents -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
+        ThunkFileSpec_FileMatches expectedContents -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError expectedPath e) $ do
           actualContents <- liftIO (T.readFile $ dir </> expectedPath)
           case T.strip expectedContents == T.strip actualContents of
             True -> pure Nothing
             False -> throwError $ ReadThunkError_FileDoesNotMatch (dir </> expectedPath) expectedContents
-        ThunkFileSpec_Ptr parser -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
+        ThunkFileSpec_Ptr parser -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError expectedPath e) $ do
           let path = dir </> expectedPath
           liftIO (doesFileExist path) >>= \case
             False -> pure Nothing
@@ -332,11 +378,16 @@ matchThunkSpecToDir thunkSpec dir dirFiles = do
               case parser actualContents of
                 Right v -> pure $ Just (thunkSpec, v)
                 Left e -> throwError $ ReadThunkError_UnparseablePtr (dir </> expectedPath) e
+      let matched = thunkSpec <$ nonEmpty datas
+      for_ (nonEmpty (toList $ dirFiles `Set.difference` expectedPaths)) $ \fs ->
+        throwError $ ReadThunkError_UnrecognizedPaths matched $ (dir </>) <$> fs
+      for_ (nonEmpty (toList $ requiredPaths `Set.difference` dirFiles)) $ \fs ->
+        throwError $ ReadThunkError_MissingPaths $ (dir </>) <$> fs
 
       uncurry ThunkData_Packed <$> case nonEmpty datas of
         Nothing -> throwError ReadThunkError_UnrecognizedThunk
-        Just xs -> fold1WithM xs $ \a@(_, ptrA) (_, ptrB) ->
-          if ptrA == ptrB then pure a else throwError $ ReadThunkError_AmbiguousPackedState ptrA ptrB
+        Just xs -> fold1WithM xs $ \a@(speca, ptrA) (specb, ptrB) ->
+          if ptrA == ptrB then pure a else throwError $ ReadThunkError_AmbiguousPackedState speca specb
   where
     rootPathsOnly = Set.fromList . mapMaybe takeRootDir . Map.keys
     takeRootDir = fmap NonEmpty.head . nonEmpty . splitPath
@@ -349,7 +400,7 @@ matchThunkSpecToDir thunkSpec dir dirFiles = do
       _ -> False
 
     dirMayExist expectedPath = liftIO (doesFileExist (dir </> expectedPath)) >>= \case
-      True -> throwError $ ReadThunkError_UnrecognizedPaths $ expectedPath :| []
+      True -> throwError $ ReadThunkError_UnrecognizedPaths Nothing $ expectedPath :| []
       False -> pure ()
 
     fold1WithM (x :| xs) f = foldM f x xs
@@ -363,7 +414,12 @@ readThunkWith specTypes dir = do
   flip fix specs $ \loop -> \case
     [] -> pure $ Left ReadThunkError_UnrecognizedThunk
     spec:rest -> runExceptT (matchThunkSpecToDir spec dir dirFiles) >>= \case
-      Left e -> putLog Debug [i|Thunk specification ${_thunkSpec_name spec} did not match ${dir}: ${e}|] *> loop rest
+      Left e
+        -- If we matched one or more thunk specs, we fail early to tell
+        -- the user exactly what's wrong:
+        | didMatchThunkSpec e -> pure $ Left e
+        -- Otherwise, keep looping:
+        | otherwise -> putLog Debug [i|Thunk specification ${_thunkSpec_name spec} did not match ${dir}: ${prettyReadThunkError e}|] *> loop rest
       x@(Right _) -> x <$ putLog Debug [i|Thunk specification ${_thunkSpec_name spec} matched ${dir}|]
 
 -- | Read a packed or unpacked thunk based on predefined thunk specifications.
@@ -413,7 +469,7 @@ overwriteThunk :: MonadNixThunk m => FilePath -> ThunkPtr -> m ()
 overwriteThunk target thunk = do
   -- Ensure that this directory is a valid thunk (i.e. so we aren't losing any data)
   readThunk target >>= \case
-    Left e -> failWith [i|Invalid thunk at ${target}: ${e}|]
+    Left e -> failReadThunkErrorWhile "while overwriting" e
     Right _ -> pure ()
 
   --TODO: Is there a safer way to do this overwriting?
@@ -520,7 +576,7 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
     case mBranch of
       Nothing -> do
         (overwrite, ptr) <- readThunk target >>= \case
-          Left err -> failWith [i|Thunk update: ${err}|]
+          Left err -> failReadThunkErrorWhile "during an update" err
           Right c -> case c of
             ThunkData_Packed _ t -> return (target, t)
             ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
@@ -531,7 +587,7 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
           , _thunkPtr_rev = rev
           }
       Just branch -> readThunk target >>= \case
-        Left err -> failWith [i|Thunk update: ${err}|]
+        Left err -> failReadThunkErrorWhile "during an update" err
         Right c -> case c of
           ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
           ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
@@ -969,7 +1025,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
   return result
   where
     copyThunkToTmp tmpDir thunkDir = readThunk thunkDir >>= \case
-      Left err -> failWith $ "withThunkUnpacked: " <> T.pack (show err)
+      Left err -> failReadThunkErrorWhile "during an update" err
       Right ThunkData_Packed{} -> do
         let tmpThunk = tmpDir </> "thunk"
         callProcessAndLogOutput (Notice, Error) $
@@ -1003,7 +1059,7 @@ unpackThunk = unpackThunk' False
 
 unpackThunk' :: MonadNixThunk m => Bool -> FilePath -> m ()
 unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
-  Left err -> failWith [i|Invalid thunk at ${thunkDir}: ${err}|]
+  Left err -> failReadThunkErrorWhile "while unpacking" err
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
   Right (ThunkData_Packed _ tptr) -> do
