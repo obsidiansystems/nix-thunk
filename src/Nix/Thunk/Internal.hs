@@ -16,6 +16,15 @@ module Nix.Thunk.Internal where
 
 import Bindings.Cli.Coreutils (cp)
 import Bindings.Cli.Git
+    ( ensureCleanGitRepo,
+      gitLookupCommitForRef,
+      gitLookupDefaultBranch,
+      gitLsRemote,
+      gitProc,
+      gitProcNoRepo,
+      isolateGitProc,
+      CommitId,
+      GitRef(GitRef_Branch) )
 import Bindings.Cli.Nix
 import Cli.Extras
 import Control.Applicative
@@ -245,7 +254,7 @@ getNixSha256ForUriUnpacked uri =
 nixPrefetchGit :: MonadNixThunk m => GitUri -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
   withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> gitUriToText uri <> " at " <> rev) $ do
-    out <- readProcessAndLogStderr Debug $
+    out <- readProcessAndLogStderr Debug $ ignoreGitConfig $
       proc nixPrefetchGitPath $ filter (/="")
         [ "--url", T.unpack $ gitUriToText uri
         , "--rev", T.unpack rev
@@ -1090,15 +1099,37 @@ gitCloneForThunkUnpack
   -> FilePath -- ^ Directory to clone into
   -> m ()
 gitCloneForThunkUnpack gitSrc commit dir = do
-  let git = callProcessAndLogOutput (Notice, Notice) . gitProc dir
-  git $ [ "clone" ]
+  _ <- readGitProcess dir $ [ "clone" ]
     ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
     ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
     ++  do branch <- maybeToList $ _gitSource_branch gitSrc
            [ "--branch", T.unpack $ untagName branch ]
-  git ["reset", "--hard", refToHexString commit]
+  _ <- readGitProcess dir ["reset", "--hard", refToHexString commit]
   when (_gitSource_fetchSubmodules gitSrc) $
-    git ["submodule", "update", "--recursive", "--init"]
+    void $ readGitProcess dir ["submodule", "update", "--recursive", "--init"]
+
+-- | Read a git process ignoring the global configuration (according to 'ignoreGitConfig').
+readGitProcess :: MonadNixThunk m => FilePath -> [String] -> m Text
+readGitProcess dir = readProcessAndLogOutput (Notice, Notice) . ignoreGitConfig . gitProc dir
+
+-- | Prevent the called process from reading Git configuration. This
+-- isn't as locked-down as 'isolateGitProc' to make sure the Git process
+-- can still interact with the user (e.g. @ssh-askpass@), but it still
+-- ignores enough of the configuration to ensure that thunks are
+-- reproducible.
+ignoreGitConfig :: ProcessSpec -> ProcessSpec
+ignoreGitConfig = setEnvOverride (envfix <>)
+  where
+    -- Ignore both global (user's) and system (... system-wide) git
+    -- configuration.
+    envfix = Map.fromList
+      [ ("GIT_CONFIG_NOSYSTEM", "yes")
+      -- Git documentation says GIT_CONFIG_GLOBAL=/dev/null should
+      -- prevent it from reading the global config file but that's a
+      -- lie, actually.
+      , ("HOME", "/dev/null")
+      , ("XDG_CONFIG_HOME", "/dev/null")
+      ]
 
 --TODO: add a rollback mode to pack to the original thunk
 packThunk :: MonadNixThunk m => ThunkPackConfig -> FilePath -> m ThunkPtr
@@ -1182,19 +1213,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
     <- fmap Map.fromList $ forM headDump $ \line -> do
       (branch : restOfLine) <- pure $ T.words line
       mUpstream <- case restOfLine of
-        [] -> do
-          -- Obelisk issue #792: If this branch has a
-          -- branch.<branch>.merge config Git option, we won't be able
-          -- to use for-each-ref to get its remote. But we can still get
-          -- the remote by piecing toegher "git conifg" output:
-          branchMergeCfg <- readGitProcess thunkDir ["config", "--get-all", T.unpack ("branch." <> branch <> ".merge")]
-          case T.lines branchMergeCfg of
-            [b, _] -> do
-              remote <- T.strip <$> readGitProcess thunkDir ["config", "--get", T.unpack ("branch." <> b <> ".remote")]
-              pure (Just (remote <> T.singleton '/' <> b, remote))
-            -- If the branch does not have a value for that setting then
-            -- we're out of luck
-            _ -> pure Nothing
+        [] -> pure Nothing
         [u, r] -> pure $ Just (u, r)
         (_:_) -> failWith "git for-each-ref invalid output"
       pure (branch, mUpstream)
