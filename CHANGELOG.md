@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.3.1.0
+
+* Add runMonadNixThunk to make it easier to run the actions defined in the library.
+
 ## 0.3.0.0
 
 * Fix readThunk when thunk is checked out [#4](https://github.com/obsidiansystems/nix-thunk/pull/4)

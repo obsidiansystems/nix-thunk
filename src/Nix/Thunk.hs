@@ -9,11 +9,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 module Nix.Thunk
-  ( ThunkSource (..)
+  ( runMonadNixThunk
+  , ThunkSource (..)
   , GitHubSource (..)
   , ThunkRev (..)
   , getLatestRev
@@ -96,6 +98,7 @@ import Data.Yaml (parseMaybe)
 import GitHub
 import GitHub.Data.Name
 import System.Directory
+import System.Environment
 import System.Exit
 import System.FilePath
 import System.IO.Error (isDoesNotExistError)
@@ -119,6 +122,12 @@ type MonadNixThunk m =
   , CliThrow NixThunkError m
   , MonadFail m
   )
+
+runMonadNixThunk :: forall a. (forall m. MonadNixThunk m => m a) -> IO (Either NixThunkError a)
+runMonadNixThunk x = do
+  args <- getArgs
+  cliConf <- mkDefaultCliConfig args
+  runCli cliConf x
 
 data NixThunkError
    = NixThunkError_ProcessFailure ProcessFailure
