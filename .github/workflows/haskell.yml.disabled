@@ -1,6 +1,6 @@
 name: github-action
 
-on: [push, pull_request] 
+on: [push, pull_request]
 
 jobs:
   build:
@@ -31,9 +31,13 @@ jobs:
 
     - name: Install dependencies
       run: |
-        cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks
+        echo -e "#!/bin/sh\necho \"CI build\"" >> print-nixpkgs-path
+        touch nix-prefetch-url
+        touch nix-prefetch-git
+        chmod 755 print-nixpkgs-path nix-prefetch-url nix-prefetch-git
+        env PATH=.:$PATH cabal update
+        env PATH=.:$PATH cabal build --only-dependencies --enable-tests --enable-benchmarks
     - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
+      run: env PATH=.:$PATH cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
-      run: cabal test all
+      run: env PATH=.:$PATH cabal test all
