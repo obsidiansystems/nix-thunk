@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -73,6 +74,7 @@ import Data.Yaml (parseMaybe)
 import GitHub
 import GitHub.Data.Name
 import System.Directory
+import System.Environment (getArgs)
 import System.Exit
 import System.FilePath
 import System.IO.Error (isDoesNotExistError)
@@ -97,10 +99,10 @@ type MonadNixThunk m =
   , MonadFail m
   )
 
-runMonadNixThunk :: forall a. (forall m. MonadNixThunk m => m a) -> IO (Either NixThunkError a)
+-- | Runs MonadNixThunk actions with relatively sensible options for non-interactive use.
+runMonadNixThunk :: forall a. (forall m. MonadNixThunk m => m a) -> IO a
 runMonadNixThunk x = do
-  args <- getArgs
-  cliConf <- mkDefaultCliConfig args
+  cliConf <- newCliConfig Error False False (\e -> (prettyNixThunkError e, ExitFailure 1))
   runCli cliConf x
 
 data NixThunkError
