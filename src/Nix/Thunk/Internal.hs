@@ -961,7 +961,7 @@ nixBuildThunkAttrWithCache thunkSpec thunkDir attr = do
   latestChange <- liftIO $ do
     let
       getModificationTimeMaybe = fmap rightToMaybe . try @IOError . getModificationTime
-      thunkFileNames = Map.keys $ _thunkSpec_files thunkSpec
+      thunkFileNames = L.delete attrCacheFileName $ Map.keys $ _thunkSpec_files thunkSpec
     maximum . catMaybes <$> traverse (getModificationTimeMaybe . (thunkDir </>)) thunkFileNames
 
   let cachePaths' = nonEmpty $ Map.keys $ Map.filter (\case ThunkFileSpec_AttrCache -> True; _ -> False) $
