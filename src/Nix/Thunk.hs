@@ -27,6 +27,7 @@ module Nix.Thunk
   , packThunk
   , createThunk
   , createThunk'
+  , createWorktree
   , ThunkPackConfig (..)
   , ThunkConfig (..)
   , updateThunkToLatest

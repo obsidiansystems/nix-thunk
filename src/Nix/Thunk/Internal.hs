@@ -1108,6 +1108,50 @@ gitCloneForThunkUnpack gitSrc commit dir = do
   when (_gitSource_fetchSubmodules gitSrc) $
     void $ readGitProcess dir ["submodule", "update", "--recursive", "--init"]
 
+createWorktree :: MonadNixThunk m => FilePath -> FilePath -> m ()
+createWorktree thunkDir gitDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+  Left err -> failReadThunkErrorWhile "while creating worktre" err
+  --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
+  Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
+  Right (ThunkData_Packed _ tptr) -> do
+
+    ensureGitRevExist gitDir tptr
+
+    let (thunkParent, thunkName) = splitFileName thunkDir
+    withTempDirectory thunkParent thunkName $ \tmpThunk -> do
+      let
+        gitSrc = thunkSourceToGitSource $ _thunkPtr_source tptr
+        newSpec = case _thunkPtr_source tptr of
+          ThunkSource_GitHub _ -> NonEmpty.head gitHubThunkSpecs
+          ThunkSource_Git _ -> NonEmpty.head gitThunkSpecs
+      withSpinner' ("Creating worktree for " <> T.pack thunkName)
+                   (Just (const $ "Created worktree for " <> T.pack thunkName)) $ do
+        currentDir <- liftIO getCurrentDirectory
+        let worktreePath = currentDir </> tmpThunk </> unpackedDirName
+        let thunkFullPath = currentDir </> thunkDir </> unpackedDirName
+
+        _ <- readGitProcess gitDir ["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)]
+
+        let normalizeMore = dropTrailingPathSeparator . normalise
+        -- when (normalizeMore unpackedPath /= normalizeMore tmpThunk) $ -- Only write meta data if the checkout is not inplace
+        --   createThunk tmpThunk $ Left newSpec
+
+        liftIO $ removePathForcibly thunkDir
+
+        _ <- readGitProcess gitDir ["worktree", "move", normalizeMore worktreePath, normalizeMore thunkFullPath]
+        pure ()
+
+ensureGitRevExist gitDir tptr = do
+  isdir <- liftIO $ doesDirectoryExist gitDir
+  -- check .git
+  unless isdir $ failWith $ "Git directory does not exist: " <> T.pack gitDir
+
+  hasRev <- T.lines <$> readGitProcess gitDir ["rev-parse", "-q", "--verify", refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)]
+
+  when (null hasRev) $ do
+    void $ readGitProcess gitDir ["fetch", T.unpack $ gitUriToText (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source tptr)]
+
+
 -- | Read a git process ignoring the global configuration (according to 'ignoreGitConfig').
 readGitProcess :: MonadNixThunk m => FilePath -> [String] -> m Text
 readGitProcess dir = readProcessAndLogOutput (Notice, Notice) . ignoreGitConfig . gitProc dir
