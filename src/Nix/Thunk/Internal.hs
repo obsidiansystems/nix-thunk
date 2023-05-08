@@ -1110,8 +1110,7 @@ gitCloneForThunkUnpack gitSrc commit dir = do
 
 createWorktree :: MonadNixThunk m => FilePath -> FilePath -> m ()
 createWorktree thunkDir gitDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
-  Left err -> failReadThunkErrorWhile "while creating worktre" err
-  --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
+  Left err -> failReadThunkErrorWhile "while creating worktree" err
   Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
   Right (ThunkData_Packed _ tptr) -> do
 
@@ -1132,13 +1131,9 @@ createWorktree thunkDir gitDir = checkThunkDirectory thunkDir *> readThunk thunk
 
         _ <- readGitProcess gitDir ["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)]
 
-        let normalizeMore = dropTrailingPathSeparator . normalise
-        -- when (normalizeMore unpackedPath /= normalizeMore tmpThunk) $ -- Only write meta data if the checkout is not inplace
-        --   createThunk tmpThunk $ Left newSpec
-
         liftIO $ removePathForcibly thunkDir
 
-        _ <- readGitProcess gitDir ["worktree", "move", normalizeMore worktreePath, normalizeMore thunkFullPath]
+        _ <- readGitProcess gitDir ["worktree", "move", normalise worktreePath, normalise thunkFullPath]
         pure ()
 
 ensureGitRevExist gitDir tptr = do
