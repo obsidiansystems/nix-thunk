@@ -11,6 +11,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 module Nix.Thunk.Internal where
 
@@ -1128,8 +1129,9 @@ createWorktree thunkDir gitDir = checkThunkDirectory thunkDir *> readThunk thunk
         currentDir <- liftIO getCurrentDirectory
         let worktreePath = currentDir </> tmpThunk </> unpackedDirName
         let thunkFullPath = currentDir </> thunkDir </> unpackedDirName
+        let mBranchName = _gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source tptr
 
-        _ <- readGitProcess gitDir ["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)]
+        _ <- readGitProcess gitDir (["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)] ++ maybe [] (\b -> ["-b", T.unpack $ untagName b]) mBranchName)
 
         liftIO $ removePathForcibly thunkDir
 
@@ -1182,8 +1184,10 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
     (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $
     do
       let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
-      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
-      liftIO $ removePathForcibly thunkDir
+      (thunkPtr, isWorktree) <- first (modifyThunkPtrByConfig thunkConfig) <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
+      if isWorktree
+        then void $ readGitProcess thunkDir ["worktree", "remove", "."]
+        else liftIO $ removePathForcibly thunkDir
       createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
 
@@ -1203,14 +1207,22 @@ data CheckClean
   | CheckClean_NoCheck
   -- ^ Don't check that the repo is clean
 
-getThunkPtr :: forall m. MonadNixThunk m => CheckClean -> FilePath -> Maybe Bool -> m ThunkPtr
+getThunkPtr :: forall m. MonadNixThunk m => CheckClean -> FilePath -> Maybe Bool -> m (ThunkPtr, Bool)
 getThunkPtr gitCheckClean dir mPrivate = do
   let repoLocations = nubOrd $ map (first normalise)
         [(".git", "."), (unpackedDirName </> ".git", unpackedDirName)]
   repoLocation' <- liftIO $ flip findM repoLocations $ doesDirectoryExist . (dir </>) . fst
-  thunkDir <- case repoLocation' of
-    Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
-    Just (_, path) -> pure $ normalise $ dir </> path
+  (thunkDir, isWorktree) <- case repoLocation' of
+    Nothing -> do
+      ff <- liftIO $ flip findM repoLocations $ doesFileExist . (dir </>) . fst
+      case ff of
+        Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
+        Just (gitPath, path) -> do
+          putLog Informational "Couldn't find .git dir, looking for a worktree instead"
+          fileContents <- liftIO $ T.readFile (dir </> gitPath)
+          unless (T.isPrefixOf "gitdir: " fileContents) $ failWith [i|Can't find an unpacked thunk or worktree in ${dir}|]
+          pure $ (normalise $ dir </> path, True)
+    Just (_, path) -> pure $ (normalise $ dir </> path, False)
 
   let (checkClean, checkIgnored) = case gitCheckClean of
         CheckClean_FullCheck -> (True, True)
@@ -1220,7 +1232,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
     "thunk pack: thunk checkout contains unsaved modifications"
 
   -- Check whether there are any stashes
-  when checkClean $ do
+  when (checkClean && not isWorktree) $ do
     stashOutput <- readGitProcess thunkDir ["stash", "list"]
     unless (T.null stashOutput) $
       failWith $ T.unlines $
@@ -1268,7 +1280,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
   putLog Debug $ "branches with upstream branch set: " <> T.pack (show headUpstream)
 
   -- Check that every branch has a remote equivalent
-  when checkClean $ do
+  when (checkClean && not isWorktree) $ do
     let untrackedBranches = Map.keys errorMap
     when (not $ L.null untrackedBranches) $ failWith $ T.unlines $
       [ "thunk pack: Certain branches in the thunk have no upstream branch \
@@ -1327,7 +1339,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
+  (, isWorktree) <$> uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadNixThunk m => ThunkSource -> m ThunkRev
