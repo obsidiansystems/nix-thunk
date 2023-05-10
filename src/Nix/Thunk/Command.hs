@@ -47,7 +47,7 @@ thunkCreateConfig = ThunkCreateConfig
 createWorktreeConfig :: Parser CreateWorktreeConfig
 createWorktreeConfig = CreateWorktreeConfig
   <$> optional (strOption (short 'b' <> long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
-  <*> switch (long "force" <> short 'f' <> help "checkout <branch> even if already checked out in other worktree")
+  <*> switch (long "detach" <> short 'd' <> help "detach HEAD at named commit")
 
 data ThunkCommand
   = ThunkCommand_Update ThunkUpdateConfig (NonEmpty FilePath)

@@ -216,7 +216,7 @@ data ThunkCreateConfig = ThunkCreateConfig
 
 data CreateWorktreeConfig = CreateWorktreeConfig
   { _createWorktreeConfig_branch :: Maybe String
-  , _createWorktreeConfig_force :: Bool
+  , _createWorktreeConfig_detach :: Bool
   } deriving Show
 
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
@@ -1138,7 +1138,7 @@ createWorktree thunkDir gitDir config = checkThunkDirectory thunkDir *> readThun
               Just b -> Just b
               _ -> T.unpack . untagName <$> (_gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source tptr)
 
-        _ <- readGitProcess gitDir (["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)] ++ (if _createWorktreeConfig_force config then ["-f"] else [] ) ++ maybe [] (\b -> ["-b",  b]) mBranchName)
+        _ <- readGitProcess gitDir (["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)] ++ (if _createWorktreeConfig_detach config then ["-d"] else maybe [] (\b -> ["-b",  b]) mBranchName))
 
         liftIO $ removePathForcibly thunkDir
 
