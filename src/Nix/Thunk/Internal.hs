@@ -214,6 +214,11 @@ data ThunkCreateConfig = ThunkCreateConfig
   , _thunkCreateConfig_destination :: Maybe FilePath
   } deriving Show
 
+data CreateWorktreeConfig = CreateWorktreeConfig
+  { _createWorktreeConfig_branch :: Maybe String
+  , _createWorktreeConfig_force :: Bool
+  } deriving Show
+
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
 forgetGithub :: Bool -> GitHubSource -> GitSource
 forgetGithub useSsh s = GitSource
@@ -1109,8 +1114,8 @@ gitCloneForThunkUnpack gitSrc commit dir = do
   when (_gitSource_fetchSubmodules gitSrc) $
     void $ readGitProcess dir ["submodule", "update", "--recursive", "--init"]
 
-createWorktree :: MonadNixThunk m => FilePath -> FilePath -> m ()
-createWorktree thunkDir gitDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+createWorktree :: MonadNixThunk m => FilePath -> FilePath -> CreateWorktreeConfig -> m ()
+createWorktree thunkDir gitDir config = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
   Left err -> failReadThunkErrorWhile "while creating worktree" err
   Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
   Right (ThunkData_Packed _ tptr) -> do
@@ -1129,9 +1134,11 @@ createWorktree thunkDir gitDir = checkThunkDirectory thunkDir *> readThunk thunk
         currentDir <- liftIO getCurrentDirectory
         let worktreePath = currentDir </> tmpThunk </> unpackedDirName
         let thunkFullPath = currentDir </> thunkDir </> unpackedDirName
-        let mBranchName = _gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source tptr
+        let mBranchName = case _createWorktreeConfig_branch config of
+              Just b -> Just b
+              _ -> T.unpack . untagName <$> (_gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source tptr)
 
-        _ <- readGitProcess gitDir (["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)] ++ maybe [] (\b -> ["-b", T.unpack $ untagName b]) mBranchName)
+        _ <- readGitProcess gitDir (["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)] ++ (if _createWorktreeConfig_force config then ["-f"] else [] ) ++ maybe [] (\b -> ["-b",  b]) mBranchName)
 
         liftIO $ removePathForcibly thunkDir
 

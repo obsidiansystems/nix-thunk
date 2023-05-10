@@ -44,10 +44,15 @@ thunkCreateConfig = ThunkCreateConfig
     source = (ThunkCreateSource_Absolute <$> maybeReader (parseGitUri . T.pack))
          <|> (ThunkCreateSource_Relative <$> str)
 
+createWorktreeConfig :: Parser CreateWorktreeConfig
+createWorktreeConfig = CreateWorktreeConfig
+  <$> optional (strOption (short 'b' <> long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+  <*> switch (long "force" <> short 'f' <> help "checkout <branch> even if already checked out in other worktree")
+
 data ThunkCommand
   = ThunkCommand_Update ThunkUpdateConfig (NonEmpty FilePath)
   | ThunkCommand_Unpack (NonEmpty FilePath)
-  | ThunkCommand_Worktree FilePath FilePath
+  | ThunkCommand_Worktree CreateWorktreeConfig FilePath FilePath
   | ThunkCommand_Pack ThunkPackConfig (NonEmpty FilePath)
   | ThunkCommand_Create ThunkCreateConfig
   deriving Show
@@ -64,7 +69,7 @@ thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> thunkUpdateConfig <*> thunkDirList) $ progDesc "Update packed thunk to latest revision available on the tracked branch"
   , command "unpack" $ info (ThunkCommand_Unpack <$> thunkDirList) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "worktree" $ info (ThunkCommand_Worktree <$> dirArg mempty <*> dirArg mempty) $ progDesc "Create a git worktree of the thunk using the specified local git repo"
+  , command "worktree" $ info (ThunkCommand_Worktree <$> createWorktreeConfig <*> dirArg mempty <*> dirArg mempty) $ progDesc "Create a git worktree of the thunk using the specified local git repo"
   , command "pack" $ info (ThunkCommand_Pack <$> thunkPackConfig <*> thunkDirList) $ progDesc "Pack git checkout or unpacked thunk into thunk that points at the current branch's upstream"
   , command "create" $ info (ThunkCommand_Create <$> thunkCreateConfig) $ progDesc "Create a packed thunk without cloning the repository first"
   ]
@@ -81,6 +86,6 @@ runThunkCommand
 runThunkCommand = \case
   ThunkCommand_Update config dirs -> mapM_ (updateThunkToLatest config) dirs
   ThunkCommand_Unpack dirs -> mapM_ unpackThunk dirs
-  ThunkCommand_Worktree thunkDir gitDir -> createWorktree thunkDir gitDir
+  ThunkCommand_Worktree config thunkDir gitDir -> createWorktree thunkDir gitDir config
   ThunkCommand_Pack config dirs -> mapM_ (packThunk config) dirs
   ThunkCommand_Create config -> createThunk' config
