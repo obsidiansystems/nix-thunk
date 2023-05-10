@@ -1186,7 +1186,11 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
       let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
       (thunkPtr, isWorktree) <- first (modifyThunkPtrByConfig thunkConfig) <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
       if isWorktree
-        then void $ readGitProcess thunkDir ["worktree", "remove", "."]
+        then void $ do
+          let Just branchName = _gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source thunkPtr
+          readGitProcess thunkDir ["switch", "--detach"]
+          readGitProcess thunkDir ["branch", "-d", T.unpack $ untagName branchName]
+          readGitProcess thunkDir ["worktree", "remove", "."]
         else liftIO $ removePathForcibly thunkDir
       createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
