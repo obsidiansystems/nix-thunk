@@ -1263,12 +1263,16 @@ getThunkPtr gitCheckClean dir mPrivate = do
         ]
       _ -> return (b, c)
 
-  -- Get information on all branches and their (optional) designated upstream
-  -- correspondents
+  let refs = if isWorktree
+        -- Get information on current branch only
+        then "refs/heads/" <> maybe "" T.unpack mCurrentBranch
+        -- Get information on all branches and their (optional) designated
+        -- upstream correspondents
+        else "refs/heads/"
   headDump :: [Text] <- T.lines <$> readGitProcess thunkDir
     [ "for-each-ref"
     , "--format=%(refname:short) %(upstream:short) %(upstream:remotename)"
-    , "refs/heads/"
+    , refs
     ]
 
   (headInfo :: Map Text (Maybe (Text, Text)))
@@ -1291,7 +1295,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
   putLog Debug $ "branches with upstream branch set: " <> T.pack (show headUpstream)
 
   -- Check that every branch has a remote equivalent
-  when (checkClean && not isWorktree) $ do
+  when checkClean $ do
     let untrackedBranches = Map.keys errorMap
     when (not $ L.null untrackedBranches) $ failWith $ T.unlines $
       [ "thunk pack: Certain branches in the thunk have no upstream branch \
