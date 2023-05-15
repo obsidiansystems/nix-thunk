@@ -1150,10 +1150,18 @@ ensureGitRevExist gitDir tptr = do
   -- check .git
   unless isdir $ failWith $ "Git directory does not exist: " <> T.pack gitDir
 
-  hasRev <- T.lines <$> readGitProcess gitDir ["rev-parse", "-q", "--verify", refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)]
+  (exitCode, _, _) <- readCreateProcessWithExitCode $
+    gitProc gitDir $
+      [ "reflog"
+      , "exists"
+      , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
+      ]
 
-  when (null hasRev) $ do
-    void $ readGitProcess gitDir ["fetch", T.unpack $ gitUriToText (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source tptr)]
+  when (exitCode /= ExitSuccess) $ do
+    void $ readGitProcess gitDir [ "fetch"
+                                 , T.unpack $ gitUriToText (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source tptr)
+                                 , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
+                                 ]
 
 
 -- | Read a git process ignoring the global configuration (according to 'ignoreGitConfig').
