@@ -269,5 +269,22 @@ in
           git -C ~/code/myapp-2 branch --set-upstream-to origin/master;
           nix-thunk pack ~/code/myapp-2;
         """)
+
+      with subtest("fails to pack worktree containing modifications"):
+        client.succeed("""
+          nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
+          touch ~/code/myapp-2/extra-file;
+        """)
+        client.fail("""
+          nix-thunk pack ~/code/myapp-2;
+        """)
+
+      with subtest("can pack worktree with stashed changes"):
+        client.succeed("""
+          git -C ~/code/myapp-2 add extra-file;
+          git -C ~/code/myapp-2 stash;
+          git -C ~/code/myapp-2 branch --set-upstream-to origin/master;
+          nix-thunk pack ~/code/myapp-2;
+        """)
       '';
   }) {}
