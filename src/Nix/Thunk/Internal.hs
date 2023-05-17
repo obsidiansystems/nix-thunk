@@ -1124,27 +1124,39 @@ createWorktree thunkDir gitDir config = checkThunkDirectory thunkDir *> readThun
 
     let (thunkParent, thunkName) = splitFileName thunkDir
     withTempDirectory thunkParent thunkName $ \tmpThunk -> do
-      let
-        gitSrc = thunkSourceToGitSource $ _thunkPtr_source tptr
-        newSpec = case _thunkPtr_source tptr of
-          ThunkSource_GitHub _ -> NonEmpty.head gitHubThunkSpecs
-          ThunkSource_Git _ -> NonEmpty.head gitThunkSpecs
       withSpinner' ("Creating worktree for " <> T.pack thunkName)
                    (Just (const $ "Created worktree for " <> T.pack thunkName)) $ do
         currentDir <- liftIO getCurrentDirectory
         let worktreePath = currentDir </> tmpThunk </> unpackedDirName
-        let thunkFullPath = currentDir </> thunkDir </> unpackedDirName
-        let mBranchName = case _createWorktreeConfig_branch config of
+            thunkFullPath = currentDir </> thunkDir </> unpackedDirName
+
+            -- Create a new branch with the user specified name if provided
+            -- else fallback to the branch specified in thunk
+            -- If a local branch already exists in gitDir, the worktree creation will fail
+            -- In which case the user should specify an alternate branch or use "-d"
+            mBranchName = case _createWorktreeConfig_branch config of
               Just b -> Just b
               _ -> T.unpack . untagName <$> (_gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source tptr)
 
-        _ <- readGitProcess gitDir (["worktree", "add", worktreePath, refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)] ++ (if _createWorktreeConfig_detach config then ["-d"] else maybe [] (\b -> ["-b",  b]) mBranchName))
+        _ <- readGitProcess gitDir $
+          [ "worktree", "add"
+          , worktreePath
+          , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
+          ] ++ (if _createWorktreeConfig_detach config
+                then ["-d"]
+                else maybe [] (\b -> ["-b",  b]) mBranchName)
 
         liftIO $ removePathForcibly thunkDir
 
-        _ <- readGitProcess gitDir ["worktree", "move", normalise worktreePath, normalise thunkFullPath]
+        _ <- readGitProcess gitDir $
+          [ "worktree", "move"
+          , normalise worktreePath
+          , normalise thunkFullPath]
         pure ()
 
+-- | Ensures that the git repo contains the revision specified in the ThunkPtr
+-- by doing fetch from remote if necessary.
+ensureGitRevExist :: MonadNixThunk m => FilePath -> ThunkPtr -> m ()
 ensureGitRevExist gitDir tptr = do
   isdir <- liftIO $ doesDirectoryExist gitDir
   -- check .git
@@ -1158,10 +1170,11 @@ ensureGitRevExist gitDir tptr = do
       ]
 
   when (exitCode /= ExitSuccess) $ do
-    void $ readGitProcess gitDir [ "fetch"
-                                 , T.unpack $ gitUriToText (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source tptr)
-                                 , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
-                                 ]
+    void $ readGitProcess gitDir $
+      [ "fetch"
+      , T.unpack $ gitUriToText (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source tptr)
+      , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
+      ]
 
 
 -- | Read a git process ignoring the global configuration (according to 'ignoreGitConfig').
