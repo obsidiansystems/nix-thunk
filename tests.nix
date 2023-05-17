@@ -254,6 +254,7 @@ in
       with subtest("can create worktree, when a new branch is specified"):
         client.succeed("""
           nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo -b somebranch-2;
+          git -C ~/code/myapp-mainrepo rev-parser --verify somebranch-2;
         """);
 
       with subtest("fails when packing worktree with unpushed branch"):
