@@ -245,7 +245,7 @@ in
 
       with subtest("nix-thunk worktree fails if branch already checked out"):
         client.fail("""
-          git -C ~/code/myapp-2 checkout master;
+          git -C ~/code/myapp-2 checkout --track master;
           nix-thunk pack ~/code/myapp-2;
           git -C ~/code/myapp-mainrepo checkout -b master;
           nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
