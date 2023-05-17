@@ -11,6 +11,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 module Nix.Thunk.Internal where
 
@@ -211,6 +212,11 @@ data ThunkCreateConfig = ThunkCreateConfig
   , _thunkCreateConfig_rev         :: Maybe (Ref SHA1)
   , _thunkCreateConfig_config      :: ThunkConfig
   , _thunkCreateConfig_destination :: Maybe FilePath
+  } deriving Show
+
+data CreateWorktreeConfig = CreateWorktreeConfig
+  { _createWorktreeConfig_branch :: Maybe String
+  , _createWorktreeConfig_detach :: Bool
   } deriving Show
 
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
@@ -1108,6 +1114,69 @@ gitCloneForThunkUnpack gitSrc commit dir = do
   when (_gitSource_fetchSubmodules gitSrc) $
     void $ readGitProcess dir ["submodule", "update", "--recursive", "--init"]
 
+createWorktree :: MonadNixThunk m => FilePath -> FilePath -> CreateWorktreeConfig -> m ()
+createWorktree thunkDir gitDir config = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+  Left err -> failReadThunkErrorWhile "while creating worktree" err
+  Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
+  Right (ThunkData_Packed _ tptr) -> do
+
+    ensureGitRevExist gitDir tptr
+
+    let (thunkParent, thunkName) = splitFileName thunkDir
+    withTempDirectory thunkParent thunkName $ \tmpThunk -> do
+      withSpinner' ("Creating worktree for " <> T.pack thunkName)
+                   (Just (const $ "Created worktree for " <> T.pack thunkName)) $ do
+        currentDir <- liftIO getCurrentDirectory
+        let worktreePath = currentDir </> tmpThunk </> unpackedDirName
+            thunkFullPath = currentDir </> thunkDir </> unpackedDirName
+
+            -- Create a new branch with the user specified name if provided
+            -- else fallback to the branch specified in thunk
+            -- If a local branch already exists in gitDir, the worktree creation will fail
+            -- In which case the user should specify an alternate branch or use "-d"
+            mBranchName = case _createWorktreeConfig_branch config of
+              Just b -> Just b
+              _ -> T.unpack . untagName <$> (_gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source tptr)
+
+        _ <- readGitProcess gitDir $
+          [ "worktree", "add"
+          , worktreePath
+          , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
+          ] ++ (if _createWorktreeConfig_detach config
+                then ["-d"]
+                else maybe [] (\b -> ["-b",  b]) mBranchName)
+
+        liftIO $ removePathForcibly thunkDir
+
+        _ <- readGitProcess gitDir $
+          [ "worktree", "move"
+          , normalise worktreePath
+          , normalise thunkFullPath]
+        pure ()
+
+-- | Ensures that the git repo contains the revision specified in the ThunkPtr
+-- by doing fetch from remote if necessary.
+ensureGitRevExist :: MonadNixThunk m => FilePath -> ThunkPtr -> m ()
+ensureGitRevExist gitDir tptr = do
+  isdir <- liftIO $ doesDirectoryExist gitDir
+  -- check .git
+  unless isdir $ failWith $ "Git directory does not exist: " <> T.pack gitDir
+
+  (exitCode, _, _) <- readCreateProcessWithExitCode $
+    gitProc gitDir $
+      [ "reflog"
+      , "exists"
+      , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
+      ]
+
+  when (exitCode /= ExitSuccess) $ do
+    void $ readGitProcess gitDir $
+      [ "fetch"
+      , T.unpack $ gitUriToText (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source tptr)
+      , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
+      ]
+
+
 -- | Read a git process ignoring the global configuration (according to 'ignoreGitConfig').
 readGitProcess :: MonadNixThunk m => FilePath -> [String] -> m Text
 readGitProcess dir = readProcessAndLogOutput (Notice, Notice) . ignoreGitConfig . gitProc dir
@@ -1143,8 +1212,18 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
     (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $
     do
       let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
-      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
-      liftIO $ removePathForcibly thunkDir
+      (thunkPtr, isWorktree) <- first (modifyThunkPtrByConfig thunkConfig)
+        <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
+      if isWorktree
+        then void $ do
+          -- Remove the branch locally, and then remove the worktree
+          case _gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source thunkPtr of
+            Just branch -> do
+              void $ readGitProcess thunkDir ["switch", "--detach"]
+              void $ readGitProcess thunkDir ["branch", "-d", T.unpack $ untagName branch]
+            Nothing -> pure () -- Should never happen
+          readGitProcess thunkDir ["worktree", "remove", "."]
+        else liftIO $ removePathForcibly thunkDir
       createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
 
@@ -1164,14 +1243,22 @@ data CheckClean
   | CheckClean_NoCheck
   -- ^ Don't check that the repo is clean
 
-getThunkPtr :: forall m. MonadNixThunk m => CheckClean -> FilePath -> Maybe Bool -> m ThunkPtr
+getThunkPtr :: forall m. MonadNixThunk m => CheckClean -> FilePath -> Maybe Bool -> m (ThunkPtr, Bool)
 getThunkPtr gitCheckClean dir mPrivate = do
   let repoLocations = nubOrd $ map (first normalise)
         [(".git", "."), (unpackedDirName </> ".git", unpackedDirName)]
   repoLocation' <- liftIO $ flip findM repoLocations $ doesDirectoryExist . (dir </>) . fst
-  thunkDir <- case repoLocation' of
-    Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
-    Just (_, path) -> pure $ normalise $ dir </> path
+  (thunkDir, isWorktree) <- case repoLocation' of
+    Nothing -> do
+      ff <- liftIO $ flip findM repoLocations $ doesFileExist . (dir </>) . fst
+      case ff of
+        Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
+        Just (gitPath, path) -> do
+          putLog Informational "Couldn't find .git dir, looking for a worktree instead"
+          fileContents <- liftIO $ T.readFile (dir </> gitPath)
+          unless (T.isPrefixOf "gitdir: " fileContents) $ failWith [i|Can't find an unpacked thunk or worktree in ${dir}|]
+          pure $ (normalise $ dir </> path, True)
+    Just (_, path) -> pure $ (normalise $ dir </> path, False)
 
   let (checkClean, checkIgnored) = case gitCheckClean of
         CheckClean_FullCheck -> (True, True)
@@ -1181,7 +1268,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
     "thunk pack: thunk checkout contains unsaved modifications"
 
   -- Check whether there are any stashes
-  when checkClean $ do
+  when (checkClean && not isWorktree) $ do
     stashOutput <- readGitProcess thunkDir ["stash", "list"]
     unless (T.null stashOutput) $
       failWith $ T.unlines $
@@ -1201,12 +1288,16 @@ getThunkPtr gitCheckClean dir mPrivate = do
         ]
       _ -> return (b, c)
 
-  -- Get information on all branches and their (optional) designated upstream
-  -- correspondents
+  let refs = if isWorktree
+        -- Get information on current branch only
+        then "refs/heads/" <> maybe "" T.unpack mCurrentBranch
+        -- Get information on all branches and their (optional) designated
+        -- upstream correspondents
+        else "refs/heads/"
   headDump :: [Text] <- T.lines <$> readGitProcess thunkDir
     [ "for-each-ref"
     , "--format=%(refname:short) %(upstream:short) %(upstream:remotename)"
-    , "refs/heads/"
+    , refs
     ]
 
   (headInfo :: Map Text (Maybe (Text, Text)))
@@ -1288,7 +1379,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
+  (, isWorktree) <$> uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadNixThunk m => ThunkSource -> m ThunkRev
