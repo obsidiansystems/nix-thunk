@@ -218,6 +218,10 @@ in
           nix-thunk create root@githost:/root/myorg/myapp.git ~/code/myapp-2;
           git clone root@githost:/root/myorg/myapp.git ~/code/myapp-mainrepo;
           nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
+          branch=$(git -C ~/code/myapp-2 branch --show-current);
+          if [ ! -z $branch ]; then
+             exit 1
+          fi
         """);
 
       with subtest("gives error when packing worktree on detached HEAD"):
