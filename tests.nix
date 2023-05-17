@@ -225,14 +225,12 @@ in
           nix-thunk pack ~/code/myapp-2;
         """)
 
-      with subtest("nix-thunk can pack worktree with branch specified"):
+      with subtest("nix-thunk can pack worktree with branch specified, and removes the local branch after packing"):
         client.succeed("""
           git -C ~/code/myapp-mainrepo checkout -b temp-branch;
           git -C ~/code/myapp-2 checkout master;
           nix-thunk pack ~/code/myapp-2;
         """);
-
-      with subtest("nix-thunk removes the local branch after packing"):
         client.fail("""
           git -C ~/code/myapp-mainrepo rev-parser --verify master;
         """)
@@ -244,10 +242,12 @@ in
         """);
 
       with subtest("nix-thunk worktree fails if branch already checked out"):
-        client.fail("""
-          git -C ~/code/myapp-2 checkout --track master;
+        client.succeed("""
+          git -C ~/code/myapp-2 branch --set-upstream-to origin/master;
           nix-thunk pack ~/code/myapp-2;
           git -C ~/code/myapp-mainrepo checkout -b master;
+        """);
+        client.fail("""
           nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
         """);
 
@@ -265,6 +265,7 @@ in
         client.succeed("""
           git -C ~/code/myapp-mainrepo checkout temp-branch;
           git -C ~/code/myapp-2 checkout master; # repo still contains somebranch-2, having no remote
+          git -C ~/code/myapp-2 branch --set-upstream-to origin/master;
           nix-thunk pack ~/code/myapp-2;
         """)
       '';
