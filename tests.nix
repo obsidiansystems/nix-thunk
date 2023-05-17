@@ -212,5 +212,60 @@ in
           cmp ~/code/myapp/git.json ~/code/myapp-remote-merge-master/git.json;
           nix-thunk unpack ~/code/myapp
         """)
+
+      with subtest("nix-thunk worktree can create worktree using existing repo, doing detached HEAD when no branch is specified in thunk"):
+        client.succeed("""
+          nix-thunk create root@githost:/root/myorg/myapp.git ~/code/myapp-2;
+          git clone root@githost:/root/myorg/myapp.git ~/code/myapp-mainrepo;
+          nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
+        """);
+
+      with subtest("nix-thunk gives error when packing worktree on detached HEAD"):
+        client.fail("""
+          nix-thunk pack ~/code/myapp-2;
+        """)
+
+      with subtest("nix-thunk can pack worktree with branch specified"):
+        client.succeed("""
+          git -C ~/code/myapp-mainrepo checkout -b temp-branch;
+          git -C ~/code/myapp-2 checkout master;
+          nix-thunk pack ~/code/myapp-2;
+        """);
+
+      with subtest("nix-thunk removes the local branch after packing"):
+        client.fail("""
+          git -C ~/code/myapp-mainrepo rev-parser --verify master;
+        """)
+
+      with subtest("nix-thunk worktree can create worktree, and checkout the default branch"):
+        client.succeed("""
+          nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
+          git -C ~/code/myapp-mainrepo rev-parse --verify master;
+        """);
+
+      with subtest("nix-thunk worktree fails if branch already checked out"):
+        client.fail("""
+          git -C ~/code/myapp-2 checkout master;
+          nix-thunk pack ~/code/myapp-2;
+          git -C ~/code/myapp-mainrepo checkout -b master;
+          nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
+        """);
+
+      with subtest("nix-thunk worktree can create worktree, specifying a new branch"):
+        client.succeed("""
+          nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo -b somebranch-2;
+        """);
+
+      with subtest("nix-thunk gives error when packing worktree with unpushed branch"):
+        client.fail("""
+          nix-thunk pack ~/code/myapp-2; # has somebranch-2 checked out
+        """)
+
+      with subtest("nix-thunk can pack worktree, having unpushed branches"):
+        client.succeed("""
+          git -C ~/code/myapp-mainrepo checkout temp-branch;
+          git -C ~/code/myapp-2 checkout master; # repo still contains somebranch-2, having no remote
+          nix-thunk pack ~/code/myapp-2;
+        """)
       '';
   }) {}
