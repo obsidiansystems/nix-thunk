@@ -9,11 +9,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 module Nix.Thunk
-  ( ThunkSource (..)
+  ( runMonadNixThunk
+  , ThunkSource (..)
   , GitHubSource (..)
   , ThunkRev (..)
   , getLatestRev
