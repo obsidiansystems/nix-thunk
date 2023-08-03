@@ -4,8 +4,12 @@ let versions = [
       { nixpkgs = "nixos-20.09"; compiler = "ghc865"; }
       { nixpkgs = "nixos-20.09"; compiler = "ghc884"; }
       { nixpkgs = "nixos-21.05"; compiler = "ghc884"; }
-      { nixpkgs = "nixpkgs-unstable"; compiler = "ghc884"; }
-      { nixpkgs = "master"; compiler = "ghc884"; }
+      { nixpkgs = "nixos-21.11"; compiler = "ghc8107"; }
+      { nixpkgs = "nixos-22.05"; compiler = "ghc8107"; }
+      { nixpkgs = "nixos-22.11"; compiler = "ghc8107"; }
+      { nixpkgs = "nixos-23.05"; compiler = "ghc8107"; }
+      { nixpkgs = "nixpkgs-unstable"; compiler = "ghc8107"; }
+      { nixpkgs = "master"; compiler = "ghc8107"; }
     ];
     pkgs = import ./dep/ci/nixpkgs-unstable {};
     inherit (pkgs) lib;
