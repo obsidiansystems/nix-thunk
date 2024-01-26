@@ -1,6 +1,6 @@
 # Revision history for nix-thunk
 
-## Unreleased
+## 0.7.0.0
 
 * Caching now works
 * [#42](https://github.com/obsidiansystems/nix-thunk/pull/42) Thunk read errors are now presented in a more informative manner.
