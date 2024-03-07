@@ -75,6 +75,20 @@ let sources = nix-thunk.mapSubdirectories nix-thunk.thunkSource ./dep;
 { which = self.callCabal2nix "which" sources.which {}; }
 ```
 
+You can also access subfolders of a thunk. For example:
+
+```nix
+{
+  imports = [ "${builtins.fetchTarball <some-tar-url>}/path/to/subfolder" ];
+}
+```
+becomes
+```
+{
+  imports = [ "${nix-thunk.thunkSource <thunk-location>}/path/to/subfolder>" ];
+}
+```
+
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change. See the [contribution guide](CONTRIBUTING.md) for more details.
 
