@@ -1,5 +1,6 @@
-{ pkgs ? import ./dep/ci/nixos-21.05 {}
-, ghc ? "ghc884"
+{ system ? builtins.currentSystem
+, pkgs ? import ./dep/ci/nixpkgs-23.11 { inherit system; }
+, ghc ? "ghc981"
 }:
 
 with pkgs.haskell.lib;
