@@ -35,6 +35,7 @@ import Control.Monad.Catch (MonadCatch, MonadMask, handle)
 import Control.Monad.Except
 import Control.Monad.Extra (findM)
 import Control.Monad.Fail (MonadFail)
+import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Log (MonadLog)
 import Crypto.Hash (Digest, HashAlgorithm, SHA1, digestFromByteString)
 import Data.Aeson ((.=))
