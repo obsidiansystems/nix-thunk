@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.7.0.1
+
+* Support GHC 9.6
+
 ## 0.7.0.0
 
 * Caching now works
