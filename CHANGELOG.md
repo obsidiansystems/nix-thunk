@@ -1,5 +1,8 @@
 # Revision history for nix-thunk
 
+## 0.7.1.0
+* Allow specifying `--rev` when doing `update` to update to a specific revision.
+
 ## 0.7.0.1
 
 * Support GHC 9.6
