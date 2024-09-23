@@ -156,6 +156,11 @@ thunkSourceToGitSource = \case
   ThunkSource_GitHub s -> forgetGithub False s
   ThunkSource_Git s -> s
 
+setThunkSourceBranch :: Maybe (Name Branch) -> ThunkSource -> ThunkSource
+setThunkSourceBranch mb = \case
+  ThunkSource_GitHub s -> ThunkSource_GitHub $ s { _gitHubSource_branch = mb }
+  ThunkSource_Git s -> ThunkSource_Git $ s { _gitSource_branch = mb }
+
 data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
@@ -186,8 +191,9 @@ newtype ThunkConfig = ThunkConfig
   } deriving Show
 
 data ThunkUpdateConfig = ThunkUpdateConfig
-  { _thunkUpdateConfig_branch :: Maybe String
-  , _thunkUpdateConfig_config :: ThunkConfig
+  { _thunkUpdateConfig_branch :: Maybe Text
+  , _thunkUpdateConfig_ref :: Maybe Text
+  , _thunkUpdateConfig_thunk :: ThunkConfig
   } deriving Show
 
 data ThunkPackConfig = ThunkPackConfig
@@ -579,34 +585,31 @@ createThunk target ptrInfo = do
       f fullPath
 
 updateThunkToLatest :: MonadNixThunk m => ThunkUpdateConfig -> FilePath -> m ()
-updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
+updateThunkToLatest cfg target = do
   withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
     checkThunkDirectory target
-    -- check to see if thunk should be updated to a specific branch or just update it's current branch
-    case mBranch of
-      Nothing -> do
-        (overwrite, ptr) <- readThunk target >>= \case
-          Left err -> failReadThunkErrorWhile "during an update" err
-          Right c -> case c of
-            ThunkData_Packed _ t -> return (target, t)
-            ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
-        let src = _thunkPtr_source ptr
-        rev <- getLatestRev src
-        overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
-          { _thunkPtr_source = src
-          , _thunkPtr_rev = rev
-          }
-      Just branch -> readThunk target >>= \case
-        Left err -> failReadThunkErrorWhile "during an update" err
-        Right c -> case c of
-          ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
-          ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
-
-setThunk :: MonadNixThunk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
-setThunk thunkConfig target gs branch = do
-  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (_thunkConfig_private thunkConfig) (Just $ T.pack branch) Nothing
-  overwriteThunk target newThunkPtr
-  updateThunkToLatest (ThunkUpdateConfig Nothing thunkConfig) target
+    readThunk target >>= \case
+      Left err -> failReadThunkErrorWhile "during an update" err
+      Right c -> case c of
+        ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
+        ThunkData_Packed _ t -> case _thunkUpdateConfig_ref cfg of
+          Just ref -> do
+            newThunkPtr <- uriThunkPtr
+              (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source t)
+              (_thunkConfig_private $ _thunkUpdateConfig_thunk cfg)
+              (_thunkUpdateConfig_branch cfg)
+              (Just ref)
+            overwriteThunk target newThunkPtr
+          Nothing -> do
+            let newSrc :: ThunkSource
+                newSrc = case _thunkUpdateConfig_branch cfg of
+                  Nothing -> _thunkPtr_source t
+                  Just b -> setThunkSourceBranch (Just $ N b) $ _thunkPtr_source t
+            rev <- getLatestRev newSrc
+            overwriteThunk target $ modifyThunkPtrByConfig (_thunkUpdateConfig_thunk cfg) $ ThunkPtr
+              { _thunkPtr_source = _thunkPtr_source t
+              , _thunkPtr_rev = rev
+              }
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
@@ -1296,9 +1299,7 @@ getLatestRev :: MonadNixThunk m => ThunkSource -> m ThunkRev
 getLatestRev os = do
   let gitS = thunkSourceToGitSource os
   (_, commit) <- gitGetCommitBranch (_gitSource_url gitS) (untagName <$> _gitSource_branch gitS)
-  case os of
-    ThunkSource_GitHub s -> githubThunkRev s commit
-    ThunkSource_Git s -> gitThunkRev s commit
+  getThunkRev os commit
 
 -- | Convert a URI to a thunk
 --
@@ -1415,6 +1416,16 @@ guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
       { URI.uriScheme = URI.mkScheme scheme
       , URI.uriAuthority = (\x -> x { URI.authUserInfo = Nothing }) <$> URI.uriAuthority u
       }
+
+getThunkRev
+  :: forall m
+  .  MonadNixThunk m
+  => ThunkSource
+  -> Text
+  -> m ThunkRev
+getThunkRev os commit = case os of
+  ThunkSource_GitHub s -> githubThunkRev s commit
+  ThunkSource_Git s -> gitThunkRev s commit
 
 -- Funny signature indicates no effects depend on the optional branch name.
 githubThunkRev

@@ -26,6 +26,7 @@ thunkConfig = ThunkConfig
 thunkUpdateConfig :: Parser ThunkUpdateConfig
 thunkUpdateConfig = ThunkUpdateConfig
   <$> optional (strOption (short 'b' <> long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+  <*> optional (strOption (short 'r' <> long "rev" <> metavar "REVISION" <> help "Update to this specific revision"))
   <*> thunkConfig
 
 thunkPackConfig :: Parser ThunkPackConfig
