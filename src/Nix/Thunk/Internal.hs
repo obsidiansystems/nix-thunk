@@ -758,8 +758,9 @@ parseGitHubJsonBytes = parseJsonObject $ parseThunkPtr $ \v ->
 
 gitThunkSpecs :: NonEmpty ThunkSpec
 gitThunkSpecs =
-  gitThunkSpecV8 :|
-  [ gitThunkSpecV7
+  gitThunkSpecV9 :|
+  [ gitThunkSpecV8
+  , gitThunkSpecV7
   , gitThunkSpecV6
   , gitThunkSpecV5
   , gitThunkSpecV4
@@ -900,7 +901,7 @@ in fetch json|]
 -- nixpkgs tarball from GitHub, so it will fail on environments without
 -- a network connection.
 gitThunkSpecV8 :: ThunkSpec
-gitThunkSpecV8 = mkThunkSpec "git-v7" "git.json" parseGitJsonBytes [i|# DO NOT HAND-EDIT THIS FILE
+gitThunkSpecV8 = mkThunkSpec "git-v8" "git.json" parseGitJsonBytes [i|# DO NOT HAND-EDIT THIS FILE
 let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
   let realUrl = let firstChar = builtins.substring 0 1 url; in
     if firstChar == "/" then /. + url
@@ -917,6 +918,30 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
   };
   json = builtins.fromJSON (builtins.readFile ./git.json);
 in fetch json|]
+
+-- | Improves V8 by supporting retrieving revs from any branch, when a branch is not provided
+-- Previously, it would only work for revs that were present on the default branch
+gitThunkSpecV9 :: ThunkSpec
+gitThunkSpecV9 = mkThunkSpec "git-v9" "git.json" parseGitHubJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
+  let realUrl = let firstChar = builtins.substring 0 1 url; in
+    if firstChar == "/" then /. + url
+    else if firstChar == "." then ./. + url
+    else url;
+  in if !fetchSubmodules && private then builtins.fetchGit {
+    url = realUrl; inherit rev;
+    ${if branch == null then null else "ref"} = branch;
+    allRefs = branch == null;
+  } else (import (builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+    sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+  }) {}).fetchgit {
+    url = realUrl; inherit rev sha256;
+  };
+  json = builtins.fromJSON (builtins.readFile ./git.json);
+in fetch json
+|]
 
 parseGitJsonBytes :: LBS.ByteString -> Either String ThunkPtr
 parseGitJsonBytes = parseJsonObject $ parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
