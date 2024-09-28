@@ -1,5 +1,8 @@
 # Revision history for nix-thunk
 
+## 0.7.2.0
+* Support retrieving revs that aren't on the default branch when a branch isn't specified.  To use this functionality, update your thunks.
+
 ## 0.7.1.0
 * Allow specifying `--rev` when doing `update` to update to a specific revision.
 
