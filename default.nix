@@ -1,5 +1,5 @@
-{ pkgs ? import ./dep/ci/nixos-21.05 {}
-, ghc ? "ghc884"
+{ pkgs ? import ./dep/ci/nixos-24.05 {}
+, ghc ? "ghc8107"
 }:
 
 with pkgs.haskell.lib;
