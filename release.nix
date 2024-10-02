@@ -1,23 +1,33 @@
-let supportedGhcVersions = [
-      "ghc8107"
-      "ghc928"
-      "ghc948"
-      "ghc965"
-
-      # 9.8.2 is not yet supported because some deps have base constraints that
-      # prevent it.  There are not any known fundamental issues.
+let versions = import ./versions.nix;
+    instances = builtins.listToAttrs (map (ghcVersion: {
+      name = ghcVersion;
+      value = import ./default.nix { ghc = ghcVersion; };
+    }) versions.ghc.supported);
+    preferredInstance = instances.${versions.ghc.preferred};
+    pkgs = preferredInstance.project.pkgs;
+    testsForInstance = name: this: {
+      inherit (this) command;
+      tests = import ./tests.nix {
+        inherit (this) command packedThunkNixpkgs;
+      };
+      recurseForDerivations = true;
+    };
+in {
+  # Instances of nix-thunk tested against different versions of its dependencies
+  byGhc =
+    builtins.mapAttrs testsForInstance instances //
+    { recurseForDerivations = true; };
+  check-hlint = pkgs.runCommand "check-hlint" {
+    src = ./.;
+    buildInputs = [
+      (preferredInstance.project.tool "hlint" "latest")
     ];
-    byGhc = builtins.listToAttrs (map (ghcVersion:
-      let this = import ./default.nix { ghc = ghcVersion; };
-      in {
-        name = ghcVersion;
-        value = {
-          inherit (this) command;
-          tests = import ./tests.nix {
-            inherit (this) command packedThunkNixpkgs;
-          };
-          recurseForDerivations = true;
-        };
-      }
-    ) supportedGhcVersions) // { recurseForDerivations = true; };
-in byGhc
+  } ''
+    set -euo pipefail
+
+    cd "$src"
+    hlint .
+
+    touch "$out" # Make the derivation succeed if we get this far
+  '';
+}
