@@ -5,8 +5,8 @@ let versions = [
       { nixpkgs = "nixos-20.09"; compiler = "ghc884"; }
       { nixpkgs = "nixos-21.05"; compiler = "ghc884"; }
       { nixpkgs = "nixos-24.05"; compiler = "ghc8107"; }
-      { nixpkgs = "nixpkgs-unstable"; compiler = "ghc884"; }
-      { nixpkgs = "master"; compiler = "ghc884"; }
+      { nixpkgs = "nixpkgs-unstable"; compiler = "ghc810"; }
+      { nixpkgs = "master"; compiler = "ghc810"; }
     ];
     pkgs = import ./dep/ci/nixpkgs-unstable {};
     inherit (pkgs) lib;
