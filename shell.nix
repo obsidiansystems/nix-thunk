@@ -1,1 +1,5 @@
-(import ./default.nix {}).command.env
+(import ./default.nix {}).project.shellFor {
+  tools = {
+    cabal = "latest";
+  };
+}

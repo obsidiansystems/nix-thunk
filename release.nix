@@ -1,18 +1,23 @@
-let versions = [
-      { nixpkgs = "nixos-20.03"; compiler = "ghc865"; }
-      { nixpkgs = "nixos-20.03"; compiler = "ghc884"; }
-      { nixpkgs = "nixos-20.09"; compiler = "ghc865"; }
-      { nixpkgs = "nixos-20.09"; compiler = "ghc884"; }
-      { nixpkgs = "nixos-21.05"; compiler = "ghc884"; }
-      { nixpkgs = "nixos-24.05"; compiler = "ghc8107"; }
-      { nixpkgs = "nixpkgs-unstable"; compiler = "ghc884"; }
-      { nixpkgs = "master"; compiler = "ghc884"; }
+let supportedGhcVersions = [
+      "ghc8107"
+      "ghc928"
+      "ghc948"
+      "ghc965"
+
+      # 9.8.2 is not yet supported because some deps have base constraints that
+      # prevent it.  There are not any known fundamental issues.
     ];
-    pkgs = import ./dep/ci/nixpkgs-unstable {};
-    inherit (pkgs) lib;
-    mkName = v: builtins.replaceStrings ["."] ["_"] "${v.compiler}-${v.nixpkgs}";
-in
-  builtins.listToAttrs (map (v: lib.nameValuePair (mkName v) (import ./. {
-    ghc = v.compiler;
-    pkgs = import (./dep/ci + "/${v.nixpkgs}") {};
-  }).command) versions) // { tests = import ./tests.nix {}; }
+    byGhc = builtins.listToAttrs (map (ghcVersion:
+      let this = import ./default.nix { ghc = ghcVersion; };
+      in {
+        name = ghcVersion;
+        value = {
+          inherit (this) command;
+          tests = import ./tests.nix {
+            inherit (this) command packedThunkNixpkgs;
+          };
+          recurseForDerivations = true;
+        };
+      }
+    ) supportedGhcVersions) // { recurseForDerivations = true; };
+in byGhc
