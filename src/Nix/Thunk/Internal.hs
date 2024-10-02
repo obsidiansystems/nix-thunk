@@ -607,7 +607,7 @@ updateThunkToLatest cfg target = do
                   Just b -> setThunkSourceBranch (Just $ N b) $ _thunkPtr_source t
             rev <- getLatestRev newSrc
             overwriteThunk target $ modifyThunkPtrByConfig (_thunkUpdateConfig_thunk cfg) $ ThunkPtr
-              { _thunkPtr_source = _thunkPtr_source t
+              { _thunkPtr_source = newSrc
               , _thunkPtr_rev = rev
               }
 
