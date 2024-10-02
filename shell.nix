@@ -2,5 +2,6 @@
   tools = {
     cabal = "latest";
     haskell-language-server = "latest";
+    hlint = "latest";
   };
 }

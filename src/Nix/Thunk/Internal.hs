@@ -558,9 +558,9 @@ createThunk' config = do
 
   destination <- case _thunkCreateConfig_uri config of
     ThunkCreateSource_Absolute uri -> pure $ fromMaybe (defaultDestinationForGitUri uri) $ _thunkCreateConfig_destination config
-    ThunkCreateSource_Relative _ ->
-      fromMaybe (failWith "When using a relative path as the thunk source, the destination path must be specified.") $
-        fmap pure (_thunkCreateConfig_destination config)
+    ThunkCreateSource_Relative _ -> case _thunkCreateConfig_destination config of
+      Nothing -> failWith "When using a relative path as the thunk source, the destination path must be specified."
+      Just dst -> pure dst
   createThunk destination $ Right newThunkPtr
 
 createThunk :: MonadNixThunk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
@@ -1291,15 +1291,17 @@ getThunkPtr gitCheckClean dir mPrivate = do
     -- branch. Purely being behind is fine.
     let nonGood = Map.filter ((/= 0) . fst . snd) stats
 
-    when (not $ Map.null nonGood) $ failWith $ T.unlines $
-      [ "thunk pack: Certain branches in the thunk have commits not yet pushed upstream:"
-      , ""
-      ] ++
-      flip map (Map.toList nonGood) (\(branch, (upstream, (ahead, behind))) -> mconcat
-        ["  ", branch, " ahead: ", T.pack (show ahead), " behind: ", T.pack (show behind), " remote branch ", upstream]) ++
-      [ ""
-      , "Please push these upstream and try again. (Or just fetch, if they are somehow \
-        \pushed but this repo's remote tracking branches don't know it.)"
+    when (not $ Map.null nonGood) $ failWith $ T.unlines $ mconcat
+      [ [ "thunk pack: Certain branches in the thunk have commits not yet pushed upstream:"
+        , ""
+        ]
+      , [ "  " <> branch <> " ahead: " <> T.pack (show ahead) <> " behind: " <> T.pack (show behind) <> " remote branch " <> upstream
+        | (branch, (upstream, (ahead, behind))) <- Map.toList nonGood
+        ]
+      , [ ""
+        , "Please push these upstream and try again. (Or just fetch, if they are somehow \
+          \pushed but this repo's remote tracking branches don't know it.)"
+        ]
       ]
 
   when checkClean $ do
@@ -1308,7 +1310,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
 
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
-  [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir
+  [remoteUri'] <- T.lines <$> readGitProcess thunkDir
     [ "config"
     , "--get"
     , "remote." <> T.unpack remote <> ".url"
@@ -1335,7 +1337,7 @@ getLatestRev os = do
 uriThunkPtr :: MonadNixThunk m => GitUri -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mPrivate mbranch mcommit = do
   commit <- case mcommit of
-    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
+    Nothing -> snd <$> gitGetCommitBranch uri mbranch
     (Just c) -> return c
   (src, rev) <- uriToThunkSource uri mPrivate mbranch >>= \case
     ThunkSource_GitHub s -> do
