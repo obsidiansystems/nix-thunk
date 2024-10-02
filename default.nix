@@ -1,6 +1,6 @@
 { haskell-nix ? import ./dep/haskell.nix {}
 , pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs
-, ghc ? "ghc8107"
+, ghc ? (import ./versions.nix).ghc.preferred
 }:
 
 with pkgs.haskell.lib;
