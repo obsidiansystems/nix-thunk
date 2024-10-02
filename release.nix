@@ -1,12 +1,4 @@
-let supportedGhcVersions = [
-      "ghc8107"
-      "ghc928"
-      "ghc948"
-      "ghc965"
-
-      # 9.8.2 is not yet supported because some deps have base constraints that
-      # prevent it.  There are not any known fundamental issues.
-    ];
+let versions = import ./versions.nix;
     byGhc = builtins.listToAttrs (map (ghcVersion:
       let this = import ./default.nix { ghc = ghcVersion; };
       in {
@@ -19,5 +11,5 @@ let supportedGhcVersions = [
           recurseForDerivations = true;
         };
       }
-    ) supportedGhcVersions) // { recurseForDerivations = true; };
+    ) versions.ghc.supported) // { recurseForDerivations = true; };
 in byGhc
