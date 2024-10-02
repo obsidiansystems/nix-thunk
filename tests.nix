@@ -136,6 +136,19 @@ in
           nix-thunk unpack ~/code/myapp;
         """)
 
+      with subtest("thunkSource works on packed thunk"):
+        client.succeed("""
+          cp ${./lib.nix} ~/code/lib.nix
+          nix-instantiate --eval --expr '(import ~/code/lib.nix { pkgs = import <nixpkgs> {}; }).thunkSource ~/code/myapp'
+        """)
+
+      with subtest("thunkSource works on unpacked thunk"):
+        client.succeed("""
+          nix-thunk pack ~/code/myapp;
+          nix-instantiate --eval --expr '(import ~/code/lib.nix { pkgs = import <nixpkgs> {}; }).thunkSource ~/code/myapp'
+          nix-thunk unpack ~/code/myapp;
+        """)
+
       with subtest("nix-thunk can create from ssh remote"):
         client.succeed("""
           nix-thunk pack ~/code/myapp;
