@@ -1,8 +1,7 @@
-{
-  supportedSystems ? [ builtins.currentSystem ]
+{ command # The nix-thunk command to test
+, packedThunkNixpkgs # The nixpkgs that nix-thunk uses
 }:
 let
-  nix-thunk = import ./default.nix {};
   # Get a version of nixpkgs corresponding to release-22.05, which
   # contains the python based tests and recursive nix.
   pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/478f3cbc8448b5852539d785fbfe9a53304133be.tar.gz) {};
@@ -26,11 +25,6 @@ let
       IdentityFile=~/.ssh/id_rsa
       User=root
   '';
-
-  # This is the version of nixpkgs that we use in thunks. It needs to be
-  # included in the VM so that builtin.fetchgit succeeds without a
-  # network connection.
-  ourNixpkgs = nix-thunk.packedThunkNixpkgs;
 in
   make-test ({...}: {
     name  = "nix-thunk";
@@ -51,7 +45,16 @@ in
         nix.useSandbox = false;
         nix.binaryCaches = [];
         environment.systemPackages = [
-          pkgs.nix-prefetch-git nix-thunk.command pkgs.git pkgs.rsync ourNixpkgs
+          pkgs.nix-prefetch-git
+          pkgs.git
+          pkgs.rsync
+
+          command
+
+          # This is the version of nixpkgs that we use in thunks. It needs to be
+          # included in the VM so that builtin.fetchgit succeeds without a
+          # network connection.
+          packedThunkNixpkgs
         ];
       };
 
@@ -62,7 +65,15 @@ in
         imports = [ (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix) ];
         nix.useSandbox = false;
         nix.binaryCaches = [];
-        environment.systemPackages = [ pkgs.git pkgs.rsync ourNixpkgs ];
+        environment.systemPackages = [
+          pkgs.git
+          pkgs.rsync
+
+          # This is the version of nixpkgs that we use in thunks. It needs to be
+          # included in the VM so that builtin.fetchgit succeeds without a
+          # network connection.
+          packedThunkNixpkgs
+        ];
       };
     };
 
