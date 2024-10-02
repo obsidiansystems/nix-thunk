@@ -1,14 +1,16 @@
 let versions = import ./versions.nix;
+    nix-thunk = import ./lib.nix {};
     instances = builtins.listToAttrs (map (ghcVersion: {
       name = ghcVersion;
-      value = import ./lib.nix { ghc = ghcVersion; };
+      value = nix-thunk.perGhc { ghc = ghcVersion; };
     }) versions.ghc.supported);
     preferredInstance = instances.${versions.ghc.preferred};
     pkgs = preferredInstance.project.pkgs;
     testsForInstance = name: this: {
       inherit (this) command;
       tests = import ./tests.nix {
-        inherit (this) command packedThunkNixpkgs;
+        inherit (this) command;
+        inherit (nix-thunk) packedThunkNixpkgs;
       };
       recurseForDerivations = true;
     };
@@ -17,8 +19,9 @@ in {
   byGhc =
     builtins.mapAttrs testsForInstance instances //
     { recurseForDerivations = true; };
+
   check-hlint = pkgs.runCommand "check-hlint" {
-    src = ./.;
+    src = nix-thunk.src;
     buildInputs = [
       (preferredInstance.project.tool "hlint" "latest")
     ];
