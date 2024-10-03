@@ -7,10 +7,11 @@
 # that is what these functions help with.
 
 {
-  lib ? pkgs.lib,
-  pkgs,
-  gitignoreSource ?
-    (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
+  lib,
+  fetchgit,
+  fetchgitPrivate,
+  gitignoreSource ? (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
+  fetchFromGitHub,
 }:
 
 {
@@ -47,11 +48,11 @@
       else if hasValidThunk "git.json" then (
         let gitArgs = filterArgs (builtins.fromJSON (builtins.readFile (p + "/git.json")));
         in if builtins.elem "@" (lib.stringToCharacters gitArgs.url)
-          then pkgs.fetchgitPrivate gitArgs
-          else pkgs.fetchgit gitArgs
+          then fetchgitPrivate gitArgs
+          else fetchgit gitArgs
         )
       else if hasValidThunk "github.json" then
-        pkgs.fetchFromGitHub (filterArgs (builtins.fromJSON (builtins.readFile (p + "/github.json"))))
+        fetchFromGitHub (filterArgs (builtins.fromJSON (builtins.readFile (p + "/github.json"))))
       else {
         name = baseNameOf p;
         outPath = gitignoreSource p;

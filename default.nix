@@ -9,9 +9,7 @@
 , ghc ? (import ./versions.nix).ghc.preferred
 }:
 
-with pkgs.haskell.lib;
-
-let inherit (pkgs) lib;
+let
     postInstallGenerateOptparseApplicativeCompletion = exeName: ''
       bashCompDir="''${!outputBin}/share/bash-completion/completions"
       zshCompDir="''${!outputBin}/share/zsh/vendor-completions"
@@ -55,9 +53,14 @@ in rec {
   # thing to install
   command = project.nix-thunk.components.exes.nix-thunk;
 
-  inherit (import ./dep/gitignore.nix { inherit lib; }) gitignoreSource;
+  inherit (import ./dep/gitignore.nix { inherit (pkgs) lib; }) gitignoreSource;
 
-  inherit (import ./lib.nix { inherit pkgs gitignoreSource; })
+  lib = pkgs.callPackage ./lib.nix {
+    inherit gitignoreSource;
+    inherit (pkgs) fetchgitPrivate;
+  };
+
+  inherit (lib)
     thunkSource
     mapSubdirectories
     ;
