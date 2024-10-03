@@ -1,7 +1,5 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE PackageImports #-}
-import "nix-thunk" Nix.Thunk
-import "nix-thunk" Nix.Thunk.Command
+import Nix.Thunk
+import Nix.Thunk.Command
 import Options.Applicative
 import Cli.Extras
 import qualified Data.Text.IO as T

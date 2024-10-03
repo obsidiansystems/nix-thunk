@@ -10,9 +10,10 @@ import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Log (MonadLog)
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.Text as T
-import Nix.Thunk
 import Options.Applicative
 import System.FilePath
+
+import Nix.Thunk
 
 thunkConfig :: Parser ThunkConfig
 thunkConfig = ThunkConfig
@@ -25,6 +26,7 @@ thunkConfig = ThunkConfig
 thunkUpdateConfig :: Parser ThunkUpdateConfig
 thunkUpdateConfig = ThunkUpdateConfig
   <$> optional (strOption (short 'b' <> long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+  <*> optional (strOption (short 'r' <> long "rev" <> metavar "REVISION" <> help "Update to this specific revision"))
   <*> thunkConfig
 
 thunkPackConfig :: Parser ThunkPackConfig

@@ -1,8 +1,7 @@
-{
-  supportedSystems ? [ builtins.currentSystem ]
+{ command # The nix-thunk command to test
+, packedThunkNixpkgs # The nixpkgs that nix-thunk uses
 }:
 let
-  nix-thunk = import ./default.nix {};
   # Get a version of nixpkgs corresponding to release-22.05, which
   # contains the python based tests and recursive nix.
   pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/478f3cbc8448b5852539d785fbfe9a53304133be.tar.gz) {};
@@ -26,11 +25,6 @@ let
       IdentityFile=~/.ssh/id_rsa
       User=root
   '';
-
-  # This is the version of nixpkgs that we use in thunks. It needs to be
-  # included in the VM so that builtin.fetchgit succeeds without a
-  # network connection.
-  ourNixpkgs = nix-thunk.packedThunkNixpkgs;
 in
   make-test ({...}: {
     name  = "nix-thunk";
@@ -51,7 +45,16 @@ in
         nix.useSandbox = false;
         nix.binaryCaches = [];
         environment.systemPackages = [
-          pkgs.nix-prefetch-git nix-thunk.command pkgs.git pkgs.rsync ourNixpkgs
+          pkgs.nix-prefetch-git
+          pkgs.git
+          pkgs.rsync
+
+          command
+
+          # This is the version of nixpkgs that we use in thunks. It needs to be
+          # included in the VM so that builtin.fetchgit succeeds without a
+          # network connection.
+          packedThunkNixpkgs
         ];
       };
 
@@ -62,7 +65,15 @@ in
         imports = [ (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix) ];
         nix.useSandbox = false;
         nix.binaryCaches = [];
-        environment.systemPackages = [ pkgs.git pkgs.rsync ourNixpkgs ];
+        environment.systemPackages = [
+          pkgs.git
+          pkgs.rsync
+
+          # This is the version of nixpkgs that we use in thunks. It needs to be
+          # included in the VM so that builtin.fetchgit succeeds without a
+          # network connection.
+          packedThunkNixpkgs
+        ];
       };
     };
 
@@ -122,6 +133,26 @@ in
           nix-thunk pack ~/code/myapp;
           grep -qF 'git.json' ~/code/myapp/thunk.nix;
           grep -qF 'myorg' ~/code/myapp/git.json;
+          nix-thunk unpack ~/code/myapp;
+        """)
+
+      with subtest("thunkSource works on unpacked thunk"):
+        client.succeed("""
+          cp ${./lib.nix} ~/code/lib.nix;
+
+          # Actual `gitignore.nix` is hard to use without internet.
+          # `builtins.fetchgit` will do as a filter-er.
+          nix-instantiate --eval --expr --strict '(import ~/code/lib.nix { pkgs = import <nixpkgs> {}; gitignoreSource = builtins.fetchGit; }).thunkSource ~/code/myapp';
+        """)
+
+      with subtest("thunkSource works on packed thunk"):
+        client.succeed("""
+          nix-thunk pack ~/code/myapp;
+
+          # Actual `gitignore.nix` is hard to use without internet. But
+          # we don't need it in this case.
+          nix-instantiate --eval --expr --strict '(import ~/code/lib.nix { pkgs = import <nixpkgs> {}; gitignoreSource = _: throw "unused"; }).thunkSource ~/code/myapp';
+
           nix-thunk unpack ~/code/myapp;
         """)
 
@@ -195,6 +226,13 @@ in
           rsync -avx githost:myapp-remote .;
           nix-build myapp-remote
         """)
+
+      with subtest("nix-thunk informs the user about parse errors"):
+        client.fail("""
+          touch ~/code/myapp-remote/extra-file;
+          nix-thunk unpack ~/code/myapp-remote 2>parse-error
+        """)
+        client.succeed("grep 'extra-file' parse-error")
 
       with subtest("nix-thunk can create from ssh remote, with branch.master.merge set"):
         client.succeed("""

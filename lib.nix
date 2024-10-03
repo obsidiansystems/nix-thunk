@@ -1,11 +1,22 @@
-{ lib
-, fetchgit
-, fetchgitPrivate
-, gitignoreSource ? (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource
-, fetchFromGitHub
+# This file is intended to be used in the Nix code of projects using
+# `nix-thunk`. As such, it is supposed to be very stable.
+#
+# Packed thunks are self-contained, but the intended use-case of
+# `nix-thunk` is that the ambient project should be able to use the
+# thunk whether it is unpacked or not. That is a bit more tricky, and so
+# that is what these functions help with.
+
+{
+  lib,
+  fetchgit,
+  fetchgitPrivate,
+  gitignoreSource ? (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
+  fetchFromGitHub,
 }:
-rec {
-  # Retrieve source that is controlled by the hack-* scripts; it may be either a stub or a checked-out git repo
+
+{
+  # Retrieve source that is controlled by the hack-* scripts; it may be either a
+  # stub or a checked-out git repo
   thunkSource = p:
     let
       contents = builtins.readDir p;
@@ -49,4 +60,5 @@ rec {
 
   #TODO: This really shouldn't include *all* symlinks, just ones that point at directories
   mapSubdirectories = f: dir: lib.mapAttrs (name: _: f (dir + "/${name}")) (lib.filterAttrs (_: type: type == "directory" || type == "symlink") (builtins.readDir dir));
+
 }
