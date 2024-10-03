@@ -8,10 +8,12 @@
 , pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs
 }:
 
-with pkgs.haskell.lib;
+rec {
+  inherit haskell-nix pkgs;
 
-let inherit (pkgs) lib;
-    postInstallGenerateOptparseApplicativeCompletion = exeName: ''
+  inherit (pkgs) lib;
+
+  postInstallGenerateOptparseApplicativeCompletion = exeName: ''
       bashCompDir="''${!outputBin}/share/bash-completion/completions"
       zshCompDir="''${!outputBin}/share/zsh/vendor-completions"
       fishCompDir="''${!outputBin}/share/fish/vendor_completions.d"
@@ -25,10 +27,23 @@ let inherit (pkgs) lib;
         exit 1
       }
     '';
-in rec {
-  src = pkgs.haskell-nix.haskellLib.cleanGit {
+
+  repoSource = pkgs.haskell-nix.haskellLib.cleanGit {
     name = "nix-thunk";
     src = ./.;
+  };
+
+  haskellPackageSource = lib.fileset.toSource {
+    fileset = lib.fileset.intersection
+      (lib.fileset.fromSource repoSource)
+      (lib.fileset.unions [
+        ./LICENSE
+        ./CHANGELOG.md
+        ./README.md
+        ./nix-thunk.cabal
+        (lib.fileset.fileFilter (file: file.hasExt "hs") ./.)
+      ]);
+    root = ./.;
   };
 
   perGhc =
@@ -37,7 +52,7 @@ in rec {
     rec {
       # The Haskell.nix project that is used to build this by default
       project = pkgs.haskell-nix.project {
-        inherit src;
+        src = haskellPackageSource;
         compiler-nix-name = ghc;
         modules = [
           ({...}: {
