@@ -28,22 +28,9 @@ rec {
       }
     '';
 
-  repoSource = pkgs.haskell-nix.haskellLib.cleanGit {
+  haskellPackageSource = pkgs.haskell-nix.haskellLib.cleanGit {
     name = "nix-thunk";
     src = ./.;
-  };
-
-  haskellPackageSource = lib.fileset.toSource {
-    fileset = lib.fileset.intersection
-      (lib.fileset.fromSource repoSource)
-      (lib.fileset.unions [
-        ./LICENSE
-        ./CHANGELOG.md
-        ./README.md
-        ./nix-thunk.cabal
-        (lib.fileset.fileFilter (file: file.hasExt "hs") ./.)
-      ]);
-    root = ./.;
   };
 
   perGhc =
