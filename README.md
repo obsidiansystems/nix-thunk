@@ -62,7 +62,7 @@ nix-thunk update some-dep
 
 ## Nix Usage
 
-The [`lib.nix`](lib.nix) file in this repository defines the nix function, `thunkSource`.
+The [`default.nix`](default.nix) file in this repository defines the nix function, `thunkSource`.
 This can be used in your nix files to access the contents of thunks.
 In the following example, a thunk is used in place of the source location argument to `callCabal2nix`.
 `thunkSource` works whether the thunk is packed or unpacked, making it convenient to run nix commands with modified thunks.
