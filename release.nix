@@ -1,7 +1,7 @@
 let versions = import ./versions.nix;
     instances = builtins.listToAttrs (map (ghcVersion: {
       name = ghcVersion;
-      value = import ./default.nix { ghc = ghcVersion; };
+      value = import ./lib.nix { ghc = ghcVersion; };
     }) versions.ghc.supported);
     preferredInstance = instances.${versions.ghc.preferred};
     pkgs = preferredInstance.project.pkgs;

@@ -138,11 +138,11 @@ in
 
       with subtest("thunkSource works on unpacked thunk"):
         client.succeed("""
-          cp ${./lib.nix} ~/code/lib.nix;
+          cp ${./default.nix} ~/code/default.nix;
 
           # Actual `gitignore.nix` is hard to use without internet.
           # `builtins.fetchgit` will do as a filter-er.
-          nix-instantiate --eval --expr --strict '(import ~/code/lib.nix { pkgs = import <nixpkgs> {}; gitignoreSource = builtins.fetchGit; }).thunkSource ~/code/myapp';
+          nix-instantiate --eval --expr --strict '(import ~/code/default.nix { pkgs = import <nixpkgs> {}; gitignoreSource = builtins.fetchGit; }).thunkSource ~/code/myapp';
         """)
 
       with subtest("thunkSource works on packed thunk"):
@@ -151,7 +151,7 @@ in
 
           # Actual `gitignore.nix` is hard to use without internet. But
           # we don't need it in this case.
-          nix-instantiate --eval --expr --strict '(import ~/code/lib.nix { pkgs = import <nixpkgs> {}; gitignoreSource = _: throw "unused"; }).thunkSource ~/code/myapp';
+          nix-instantiate --eval --expr --strict '(import ~/code/default.nix { pkgs = import <nixpkgs> {}; gitignoreSource = _: throw "unused"; }).thunkSource ~/code/myapp';
 
           nix-thunk unpack ~/code/myapp;
         """)
