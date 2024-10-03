@@ -21,15 +21,14 @@ in {
     { recurseForDerivations = true; };
 
   check-hlint = pkgs.runCommand "check-hlint" {
-    src = nix-thunk.src;
+    src = nix-thunk.haskellPackageSource;
     buildInputs = [
       (preferredInstance.project.tool "hlint" "latest")
     ];
   } ''
     set -euo pipefail
 
-    cd "$src"
-    hlint .
+    hlint --hint=${./.hlint.yaml} "$src"
 
     touch "$out" # Make the derivation succeed if we get this far
   '';
