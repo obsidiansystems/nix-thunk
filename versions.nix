@@ -10,10 +10,10 @@
       "ghc928"
       "ghc948"
       "ghc966"
-
-      # 9.8.2 is not yet supported because some deps have base constraints that
-      # prevent it.  There are not any known fundamental issues.
+      "ghc982"
+      "ghc9101"
     ];
-    preferred = builtins.elemAt supported (builtins.length supported - 1);
+    # TODO change back to `- 1`, but hlint is having trouble with GHC 9.10
+    preferred = builtins.elemAt supported (builtins.length supported - 2);
   };
 }
