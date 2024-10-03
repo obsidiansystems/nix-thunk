@@ -6,7 +6,6 @@
 
 { haskell-nix ? import ./dep/haskell.nix {}
 , pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs
-, ghc ? (import ./versions.nix).ghc.preferred
 }:
 
 with pkgs.haskell.lib;
@@ -27,33 +26,40 @@ let inherit (pkgs) lib;
       }
     '';
 in rec {
-  # The Haskell.nix project that is used to build this by default
-  project = pkgs.haskell-nix.project {
-    src = pkgs.haskell-nix.haskellLib.cleanGit {
-      name = "nix-thunk";
-      src = ./.;
-    };
-    compiler-nix-name = ghc;
-    modules = [
-      ({...}: {
-        packages.cli-git.components.library.build-tools = [
-          pkgs.git
-        ];
-        packages.cli-nix.components.library.build-tools = [
-          pkgs.nix-prefetch-git
-          pkgs.nix # For nix-prefetch-url
-        ];
-        packages.nix-thunk.components.exes.nix-thunk = {
-          enableStatic = true;
-          postInstall = postInstallGenerateOptparseApplicativeCompletion "nix-thunk";
-        };
-      })
-    ];
+  src = pkgs.haskell-nix.haskellLib.cleanGit {
+    name = "nix-thunk";
+    src = ./.;
   };
 
-  # The nix-thunk command itself; if you just want to use nix-thunk, this is the
-  # thing to install
-  command = project.nix-thunk.components.exes.nix-thunk;
+  perGhc =
+    { ghc ? (import ./versions.nix).ghc.preferred }:
+
+    rec {
+      # The Haskell.nix project that is used to build this by default
+      project = pkgs.haskell-nix.project {
+        inherit src;
+        compiler-nix-name = ghc;
+        modules = [
+          ({...}: {
+            packages.cli-git.components.library.build-tools = [
+              pkgs.git
+            ];
+            packages.cli-nix.components.library.build-tools = [
+              pkgs.nix-prefetch-git
+              pkgs.nix # For nix-prefetch-url
+            ];
+            packages.nix-thunk.components.exes.nix-thunk = {
+              enableStatic = true;
+              postInstall = postInstallGenerateOptparseApplicativeCompletion "nix-thunk";
+            };
+          })
+        ];
+      };
+
+      # The nix-thunk command itself; if you just want to use nix-thunk, this is the
+      # thing to install
+      command = project.nix-thunk.components.exes.nix-thunk;
+    };
 
   inherit (import ./dep/gitignore.nix { inherit lib; }) gitignoreSource;
 
