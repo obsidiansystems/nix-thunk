@@ -6,14 +6,20 @@
 # thunk whether it is unpacked or not. That is a bit more tricky, and so
 # that is what these functions help with.
 
+let defaultInputs = import ./defaultInputs.nix; in
 {
+  haskell-nix ? defaultInputs.haskell-nix {},
+  pkgs ? defaultInputs.pkgs { inherit haskell-nix; },
   lib ? pkgs.lib,
-  pkgs,
   gitignoreSource ?
     (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
 }:
 
+let myLib = import ./lib.nix { inherit haskell-nix pkgs; }; in
+
 rec {
+  command = (myLib.perGhc {}).command;
+
   # Retrieve source that is controlled by the hack-* scripts; it may be either a
   # stub or a checked-out git repo
   thunkSource = p:
