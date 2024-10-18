@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE PackageImports #-}
 import Nix.Thunk
 import Nix.Thunk.Command
 import Options.Applicative

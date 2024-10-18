@@ -36,6 +36,7 @@ import Control.Monad.Catch (MonadCatch, MonadMask, handle)
 import Control.Monad.Except
 import Control.Monad.Extra (findM)
 import Control.Monad.Fail (MonadFail)
+import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Log (MonadLog)
 import Crypto.Hash (Digest, HashAlgorithm, SHA1, digestFromByteString)
 import Data.Aeson ((.=))
@@ -156,6 +157,11 @@ thunkSourceToGitSource = \case
   ThunkSource_GitHub s -> forgetGithub False s
   ThunkSource_Git s -> s
 
+setThunkSourceBranch :: Maybe (Name Branch) -> ThunkSource -> ThunkSource
+setThunkSourceBranch mb = \case
+  ThunkSource_GitHub s -> ThunkSource_GitHub $ s { _gitHubSource_branch = mb }
+  ThunkSource_Git s -> ThunkSource_Git $ s { _gitSource_branch = mb }
+
 data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
@@ -186,8 +192,9 @@ newtype ThunkConfig = ThunkConfig
   } deriving Show
 
 data ThunkUpdateConfig = ThunkUpdateConfig
-  { _thunkUpdateConfig_branch :: Maybe String
-  , _thunkUpdateConfig_config :: ThunkConfig
+  { _thunkUpdateConfig_branch :: Maybe Text
+  , _thunkUpdateConfig_ref :: Maybe Text
+  , _thunkUpdateConfig_thunk :: ThunkConfig
   } deriving Show
 
 data ThunkPackConfig = ThunkPackConfig
@@ -557,9 +564,9 @@ createThunk' config = do
 
   destination <- case _thunkCreateConfig_uri config of
     ThunkCreateSource_Absolute uri -> pure $ fromMaybe (defaultDestinationForGitUri uri) $ _thunkCreateConfig_destination config
-    ThunkCreateSource_Relative _ ->
-      fromMaybe (failWith "When using a relative path as the thunk source, the destination path must be specified.") $
-        fmap pure (_thunkCreateConfig_destination config)
+    ThunkCreateSource_Relative _ -> case _thunkCreateConfig_destination config of
+      Nothing -> failWith "When using a relative path as the thunk source, the destination path must be specified."
+      Just dst -> pure dst
   createThunk destination $ Right newThunkPtr
 
 createThunk :: MonadNixThunk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
@@ -584,34 +591,31 @@ createThunk target ptrInfo = do
       f fullPath
 
 updateThunkToLatest :: MonadNixThunk m => ThunkUpdateConfig -> FilePath -> m ()
-updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
+updateThunkToLatest cfg target = do
   withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
     checkThunkDirectory target
-    -- check to see if thunk should be updated to a specific branch or just update it's current branch
-    case mBranch of
-      Nothing -> do
-        (overwrite, ptr) <- readThunk target >>= \case
-          Left err -> failReadThunkErrorWhile "during an update" err
-          Right c -> case c of
-            ThunkData_Packed _ t -> return (target, t)
-            ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
-        let src = _thunkPtr_source ptr
-        rev <- getLatestRev src
-        overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
-          { _thunkPtr_source = src
-          , _thunkPtr_rev = rev
-          }
-      Just branch -> readThunk target >>= \case
-        Left err -> failReadThunkErrorWhile "during an update" err
-        Right c -> case c of
-          ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
-          ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
-
-setThunk :: MonadNixThunk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
-setThunk thunkConfig target gs branch = do
-  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (_thunkConfig_private thunkConfig) (Just $ T.pack branch) Nothing
-  overwriteThunk target newThunkPtr
-  updateThunkToLatest (ThunkUpdateConfig Nothing thunkConfig) target
+    readThunk target >>= \case
+      Left err -> failReadThunkErrorWhile "during an update" err
+      Right c -> case c of
+        ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
+        ThunkData_Packed _ t -> case _thunkUpdateConfig_ref cfg of
+          Just ref -> do
+            newThunkPtr <- uriThunkPtr
+              (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source t)
+              (_thunkConfig_private $ _thunkUpdateConfig_thunk cfg)
+              (_thunkUpdateConfig_branch cfg)
+              (Just ref)
+            overwriteThunk target newThunkPtr
+          Nothing -> do
+            let newSrc :: ThunkSource
+                newSrc = case _thunkUpdateConfig_branch cfg of
+                  Nothing -> _thunkPtr_source t
+                  Just b -> setThunkSourceBranch (Just $ N b) $ _thunkPtr_source t
+            rev <- getLatestRev newSrc
+            overwriteThunk target $ modifyThunkPtrByConfig (_thunkUpdateConfig_thunk cfg) $ ThunkPtr
+              { _thunkPtr_source = newSrc
+              , _thunkPtr_rev = rev
+              }
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
@@ -760,8 +764,9 @@ parseGitHubJsonBytes = parseJsonObject $ parseThunkPtr $ \v ->
 
 gitThunkSpecs :: NonEmpty ThunkSpec
 gitThunkSpecs =
-  gitThunkSpecV8 :|
-  [ gitThunkSpecV7
+  gitThunkSpecV9 :|
+  [ gitThunkSpecV8
+  , gitThunkSpecV7
   , gitThunkSpecV6
   , gitThunkSpecV5
   , gitThunkSpecV4
@@ -902,7 +907,7 @@ in fetch json|]
 -- nixpkgs tarball from GitHub, so it will fail on environments without
 -- a network connection.
 gitThunkSpecV8 :: ThunkSpec
-gitThunkSpecV8 = mkThunkSpec "git-v7" "git.json" parseGitJsonBytes [i|# DO NOT HAND-EDIT THIS FILE
+gitThunkSpecV8 = mkThunkSpec "git-v8" "git.json" parseGitJsonBytes [i|# DO NOT HAND-EDIT THIS FILE
 let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
   let realUrl = let firstChar = builtins.substring 0 1 url; in
     if firstChar == "/" then /. + url
@@ -919,6 +924,30 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
   };
   json = builtins.fromJSON (builtins.readFile ./git.json);
 in fetch json|]
+
+-- | Improves V8 by supporting retrieving revs from any branch, when a branch is not provided
+-- Previously, it would only work for revs that were present on the default branch
+gitThunkSpecV9 :: ThunkSpec
+gitThunkSpecV9 = mkThunkSpec "git-v9" "git.json" parseGitHubJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
+  let realUrl = let firstChar = builtins.substring 0 1 url; in
+    if firstChar == "/" then /. + url
+    else if firstChar == "." then ./. + url
+    else url;
+  in if !fetchSubmodules && private then builtins.fetchGit {
+    url = realUrl; inherit rev;
+    ${if branch == null then null else "ref"} = branch;
+    allRefs = branch == null;
+  } else (import (builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+    sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+  }) {}).fetchgit {
+    url = realUrl; inherit rev sha256;
+  };
+  json = builtins.fromJSON (builtins.readFile ./git.json);
+in fetch json
+|]
 
 parseGitJsonBytes :: LBS.ByteString -> Either String ThunkPtr
 parseGitJsonBytes = parseJsonObject $ parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
@@ -967,7 +996,7 @@ nixBuildThunkAttrWithCache thunkSpec thunkDir attr = do
   latestChange <- liftIO $ do
     let
       getModificationTimeMaybe = fmap rightToMaybe . try @IOError . getModificationTime
-      thunkFileNames = Map.keys $ _thunkSpec_files thunkSpec
+      thunkFileNames = L.delete attrCacheFileName $ Map.keys $ _thunkSpec_files thunkSpec
     maximum . catMaybes <$> traverse (getModificationTimeMaybe . (thunkDir </>)) thunkFileNames
 
   let cachePaths' = nonEmpty $ Map.keys $ Map.filter (\case ThunkFileSpec_AttrCache -> True; _ -> False) $
@@ -1353,15 +1382,17 @@ getThunkPtr gitCheckClean dir mPrivate = do
     -- branch. Purely being behind is fine.
     let nonGood = Map.filter ((/= 0) . fst . snd) stats
 
-    when (not $ Map.null nonGood) $ failWith $ T.unlines $
-      [ "thunk pack: Certain branches in the thunk have commits not yet pushed upstream:"
-      , ""
-      ] ++
-      flip map (Map.toList nonGood) (\(branch, (upstream, (ahead, behind))) -> mconcat
-        ["  ", branch, " ahead: ", T.pack (show ahead), " behind: ", T.pack (show behind), " remote branch ", upstream]) ++
-      [ ""
-      , "Please push these upstream and try again. (Or just fetch, if they are somehow \
-        \pushed but this repo's remote tracking branches don't know it.)"
+    when (not $ Map.null nonGood) $ failWith $ T.unlines $ mconcat
+      [ [ "thunk pack: Certain branches in the thunk have commits not yet pushed upstream:"
+        , ""
+        ]
+      , [ "  " <> branch <> " ahead: " <> T.pack (show ahead) <> " behind: " <> T.pack (show behind) <> " remote branch " <> upstream
+        | (branch, (upstream, (ahead, behind))) <- Map.toList nonGood
+        ]
+      , [ ""
+        , "Please push these upstream and try again. (Or just fetch, if they are somehow \
+          \pushed but this repo's remote tracking branches don't know it.)"
+        ]
       ]
 
   when checkClean $ do
@@ -1370,7 +1401,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
 
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
-  [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir
+  [remoteUri'] <- T.lines <$> readGitProcess thunkDir
     [ "config"
     , "--get"
     , "remote." <> T.unpack remote <> ".url"
@@ -1386,9 +1417,7 @@ getLatestRev :: MonadNixThunk m => ThunkSource -> m ThunkRev
 getLatestRev os = do
   let gitS = thunkSourceToGitSource os
   (_, commit) <- gitGetCommitBranch (_gitSource_url gitS) (untagName <$> _gitSource_branch gitS)
-  case os of
-    ThunkSource_GitHub s -> githubThunkRev s commit
-    ThunkSource_Git s -> gitThunkRev s commit
+  getThunkRev os commit
 
 -- | Convert a URI to a thunk
 --
@@ -1399,7 +1428,7 @@ getLatestRev os = do
 uriThunkPtr :: MonadNixThunk m => GitUri -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mPrivate mbranch mcommit = do
   commit <- case mcommit of
-    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
+    Nothing -> snd <$> gitGetCommitBranch uri mbranch
     (Just c) -> return c
   (src, rev) <- uriToThunkSource uri mPrivate mbranch >>= \case
     ThunkSource_GitHub s -> do
@@ -1505,6 +1534,16 @@ guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
       { URI.uriScheme = URI.mkScheme scheme
       , URI.uriAuthority = (\x -> x { URI.authUserInfo = Nothing }) <$> URI.uriAuthority u
       }
+
+getThunkRev
+  :: forall m
+  .  MonadNixThunk m
+  => ThunkSource
+  -> Text
+  -> m ThunkRev
+getThunkRev os commit = case os of
+  ThunkSource_GitHub s -> githubThunkRev s commit
+  ThunkSource_Git s -> gitThunkRev s commit
 
 -- Funny signature indicates no effects depend on the optional branch name.
 githubThunkRev

@@ -1,7 +1,18 @@
 # Revision history for nix-thunk
 
-## Unreleased
+## 0.7.2.0
+* Support retrieving revs that aren't on the default branch when a branch isn't specified.  To use this functionality, update your thunks.
 
+## 0.7.1.0
+* Allow specifying `--rev` when doing `update` to update to a specific revision.
+
+## 0.7.0.1
+
+* Support GHC 9.6
+
+## 0.7.0.0
+
+* Caching now works
 * [#42](https://github.com/obsidiansystems/nix-thunk/pull/42) Thunk read errors are now presented in a more informative manner.
 * [#43](https://github.com/obsidiansystems/nix-thunk/pull/43) `nix-thunk` will now ensure that any `git` processes invoked during its execution have a clean configuration. 
   This prevents `nix-thunk` crashing when e.g. the user's configuration `git` is valid only in a version newer than what `nix-thunk` links against, and works towards making thunks more reproducible by ensuring that thunk URIs are resolvable independently of the user's environment.

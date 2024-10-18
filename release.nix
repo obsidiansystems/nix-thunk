@@ -1,17 +1,39 @@
-let versions = [
-      { nixpkgs = "nixos-20.03"; compiler = "ghc865"; }
-      { nixpkgs = "nixos-20.03"; compiler = "ghc884"; }
-      { nixpkgs = "nixos-20.09"; compiler = "ghc865"; }
-      { nixpkgs = "nixos-20.09"; compiler = "ghc884"; }
-      { nixpkgs = "nixos-21.05"; compiler = "ghc884"; }
-      { nixpkgs = "nixpkgs-unstable"; compiler = "ghc884"; }
-      { nixpkgs = "master"; compiler = "ghc884"; }
+let versions = import ./versions.nix;
+    nix-thunk = import ./lib.nix {};
+    instances = builtins.listToAttrs (map (ghcVersion: {
+      name = ghcVersion;
+      value = nix-thunk.perGhc { ghc = ghcVersion; };
+    }) versions.ghc.supported);
+    preferredInstance = instances.${versions.ghc.preferred};
+    pkgs = preferredInstance.project.pkgs;
+    testsForInstance = name: this: {
+      inherit (this) command;
+      tests = import ./tests.nix {
+        inherit (this) command;
+        inherit (nix-thunk) packedThunkNixpkgs;
+      };
+      recurseForDerivations = true;
+    };
+in {
+  # Instances of nix-thunk tested against different versions of its dependencies
+  byGhc =
+    builtins.mapAttrs testsForInstance instances //
+    { recurseForDerivations = true; };
+
+  check-hlint = pkgs.runCommand "check-hlint" {
+    src = nix-thunk.haskellPackageSource;
+    buildInputs = [
+      (preferredInstance.project.tool "hlint" "latest")
     ];
-    pkgs = import ./dep/ci/nixpkgs-unstable {};
-    inherit (pkgs) lib;
-    mkName = v: builtins.replaceStrings ["."] ["_"] "${v.compiler}-${v.nixpkgs}";
-in
-  builtins.listToAttrs (map (v: lib.nameValuePair (mkName v) (import ./. {
-    ghc = v.compiler;
-    pkgs = import (./dep/ci + "/${v.nixpkgs}") {};
-  }).command) versions) // { tests = import ./tests.nix {}; }
+  } ''
+    set -euo pipefail
+
+    hlint --hint=${./.hlint.yaml} "$src"
+
+    touch "$out" # Make the derivation succeed if we get this far
+  '';
+
+  # Test the interface of default.nix.  This should NOT be deduplicated, even if
+  # it is building the same derivations as other parts of this file.
+  command = (import ./default.nix {}).command;
+}

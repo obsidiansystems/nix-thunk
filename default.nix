@@ -1,117 +1,27 @@
-{ pkgs ? import ./dep/ci/nixos-21.05 {}
-, ghc ? "ghc884"
+# This file is intended to be used in the Nix code of projects using
+# `nix-thunk`. As such, it is supposed to be very stable.
+#
+# Packed thunks are self-contained, but the intended use-case of
+# `nix-thunk` is that the ambient project should be able to use the
+# thunk whether it is unpacked or not. That is a bit more tricky, and so
+# that is what these functions help with.
+
+let defaultInputs = import ./defaultInputs.nix; in
+{
+  haskell-nix ? defaultInputs.haskell-nix {},
+  pkgs ? defaultInputs.pkgs { inherit haskell-nix; },
+  lib ? pkgs.lib,
+  gitignoreSource ?
+    (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
 }:
 
-with pkgs.haskell.lib;
+let myLib = import ./lib.nix { inherit haskell-nix pkgs; }; in
 
-let inherit (pkgs) lib; in rec {
-  # The version of nixpkgs that we use for fetching packing thunks (by
-  # themselves). Not to be used for building packages.
-  packedThunkNixpkgs = builtins.fetchTarball {
-    url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
-    sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
-  };
+rec {
+  command = (myLib.perGhc {}).command;
 
-  # Override a nix-thunk Cabal package so it knows where nixpkgs is.
-  # This function is exported so that it can be used by downstream
-  # consumers of nix-thunk as a library (e.g. Obelisk).
-  makeRunnableNixThunk = pkg: pkgs.haskell.lib.overrideCabal pkg {
-    librarySystemDepends = with pkgs; [
-      # The correct reaction to this code is "what", followed by
-      # some rather choice words about its author. The answer to
-      # "what":
-      # We need a known-good nixpkgs to be included in nix-thunk's
-      # closure *and* we need to know its path at compile time. The
-      # solution is to generate a tiny, tiny shell script that just
-      # prints the path to that nixpkgs; Nix takes care of making
-      # sure it's a dependency.
-      (writeTextFile {
-        name = "print-nixpkgs-path";
-        text = ''
-          #!/bin/sh
-          echo "${packedThunkNixpkgs}"
-        '';
-        executable = true;
-        destination = "/bin/print-nixpkgs-path";
-      })
-      # You can verify that the nixpkgs was included by doing
-      #
-      #  $ nix-build default.nix -A command
-      #  $ nix path-info -rsSh ./result | grep -source
-      #
-      # and seeing that the closure includes a ~100MiB nixpkgs path.
-    ];
-  };
-
-  haskellPackageOverrides = self: super: {
-    which = self.callCabal2nix "which" (thunkSource ./dep/which) {};
-    cli-extras = self.callCabal2nix "cli-extras" (thunkSource ./dep/cli-extras) {};
-    cli-nix = (import (thunkSource ./dep/cli-nix + "/overlays.nix")).cli-nix pkgs self;
-    cli-git = pkgs.haskell.lib.overrideCabal (self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {}) {
-      librarySystemDepends = with pkgs; [
-        git
-      ];
-    };
-    github = self.callCabal2nix "github" (thunkSource ./dep/github) {};
-    logging-effect = self.callHackageDirect {
-      pkg = "logging-effect";
-      ver = "1.3.11";
-      sha256 = "0g4590zlnj6ycmaczkik011im4nlffplpd337g7nnasjw3wqxvdv";
-    } {};
-    unliftio-core = self.callHackageDirect {
-      pkg = "unliftio-core";
-      ver = "0.2.0.1";
-      sha256 = "06cbv2yx5a6qj4p1w91q299r0yxv96ms72xmjvkpm9ic06ikvzzq";
-    } {};
-    prettyprinter = self.callHackageDirect {
-      pkg = "prettyprinter";
-      ver = "1.6.2";
-      sha256 = "0ppmw0x2b2r71p0g43b3f85sy5cjb1gax8ik2zryfmii3b1hzz7c";
-    } {};
-    resourcet = self.callHackageDirect {
-      pkg = "resourcet";
-      ver = "1.2.4.2";
-      sha256 = "1kwb0h7z1l5vvzrl2b4bpz15qzbgwn7a6i00fn2b7zkj1n25vmg8";
-    } {};
-    monad-logger = self.callHackageDirect {
-      pkg = "monad-logger";
-      ver = "0.3.36";
-      sha256 = "0ba1liqvmwjcyz3smp9fh2px1kvz8zzbwcafm0armhwazlys1qh1";
-    } {};
-    base-compat = self.callHackageDirect {
-      pkg = "base-compat";
-      ver = "0.11.1";
-      sha256 = "06030s3wzwkrm0a1hw4w7cd0nlrmxadryic4dr43kh380lzgdz58";
-    } {};
-    base-compat-batteries = self.callHackageDirect {
-      pkg = "base-compat-batteries";
-      ver = "0.11.1";
-      sha256 = "1xsh4mcrmgiavgnkb5bg5lzxj1546525ffxjms3rlagf4jh9sn1i";
-    } {};
-    # When built on WSL, the tests fail for this package.
-    # We do not officially support WSL, but this is a small affordance.
-    time-compat = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
-      pkg = "time-compat";
-      ver = "1.9.5";
-      sha256 = "0xy044x713bbvl8i1180bnccn60ji1n7mw1scs9ydy615bgwr82c";
-    } {});
-    ansi-terminal = self.callHackageDirect {
-      pkg = "ansi-terminal";
-      ver = "0.9.1";
-      sha256 = "152lnv339fg8nacvyhxjfy2ylppc33ckb6qrgy0vzanisi8pgcvd";
-    } {};
-    nix-thunk = makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {});
-  };
-
-  haskellPackages = pkgs.haskell.packages."${ghc}".override {
-    overrides = haskellPackageOverrides;
-  };
-
-  command = generateOptparseApplicativeCompletion "nix-thunk" (justStaticExecutables haskellPackages.nix-thunk);
-
-  inherit (import ./dep/gitignore.nix { inherit lib; }) gitignoreSource;
-
-  # Retrieve source that is controlled by the hack-* scripts; it may be either a stub or a checked-out git repo
+  # Retrieve source that is controlled by the hack-* scripts; it may be either a
+  # stub or a checked-out git repo
   thunkSource = p:
     let
       contents = builtins.readDir p;
