@@ -1165,7 +1165,7 @@ createWorktree thunkDir gitDir config = checkThunkDirectory thunkDir *> readThun
             -- In which case the user should specify an alternate branch or use "-d"
             mBranchName = case _createWorktreeConfig_branch config of
               Just b -> Just b
-              _ -> T.unpack . untagName <$> (_gitSource_branch $ thunkSourceToGitSource $ _thunkPtr_source tptr)
+              _ -> T.unpack . untagName <$> _gitSource_branch (thunkSourceToGitSource $ _thunkPtr_source tptr)
 
         _ <- readGitProcess gitDir $
           [ "worktree", "add"
@@ -1177,7 +1177,7 @@ createWorktree thunkDir gitDir config = checkThunkDirectory thunkDir *> readThun
 
         liftIO $ removePathForcibly thunkDir
 
-        _ <- readGitProcess gitDir $
+        _ <- readGitProcess gitDir
           [ "worktree", "move"
           , normalise worktreePath
           , normalise thunkFullPath]
@@ -1192,14 +1192,14 @@ ensureGitRevExist gitDir tptr = do
   unless isdir $ failWith $ "Git directory does not exist: " <> T.pack gitDir
 
   (exitCode, _, _) <- readCreateProcessWithExitCode $
-    gitProc gitDir $
+    gitProc gitDir
       [ "reflog"
       , "exists"
       , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
       ]
 
   when (exitCode /= ExitSuccess) $ do
-    void $ readGitProcess gitDir $
+    void $ readGitProcess gitDir
       [ "fetch"
       , T.unpack $ gitUriToText (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source tptr)
       , refToHexString (_thunkRev_commit $ _thunkPtr_rev tptr)
@@ -1286,8 +1286,8 @@ getThunkPtr gitCheckClean dir mPrivate = do
           putLog Informational "Couldn't find .git dir, looking for a worktree instead"
           fileContents <- liftIO $ T.readFile (dir </> gitPath)
           unless (T.isPrefixOf "gitdir: " fileContents) $ failWith [i|Can't find an unpacked thunk or worktree in ${dir}|]
-          pure $ (normalise $ dir </> path, True)
-    Just (_, path) -> pure $ (normalise $ dir </> path, False)
+          pure (normalise $ dir </> path, True)
+    Just (_, path) -> pure (normalise $ dir </> path, False)
 
   let (checkClean, checkIgnored) = case gitCheckClean of
         CheckClean_FullCheck -> (True, True)
