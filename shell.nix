@@ -1,4 +1,4 @@
-(import ./default.nix {}).project.shellFor {
+((import ./lib.nix {}).perGhc {}).project.shellFor {
   tools = {
     cabal = "latest";
     haskell-language-server = "latest";

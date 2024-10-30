@@ -36,4 +36,6 @@ in {
   # Test the interface of default.nix.  This should NOT be deduplicated, even if
   # it is building the same derivations as other parts of this file.
   command = (import ./default.nix {}).command;
+
+  shell = import ./shell.nix;
 }
