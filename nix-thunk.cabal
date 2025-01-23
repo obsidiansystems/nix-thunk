@@ -1,6 +1,6 @@
 cabal-version:      >=1.10
 name:               nix-thunk
-version:            0.7.2.0
+version:            0.7.2.1
 license:            BSD3
 license-file:       LICENSE
 copyright:          Obsidian Systems LLC 2020-2022
@@ -19,7 +19,7 @@ extra-source-files:
   CHANGELOG.md
   README.md
 
-tested-with: GHC ==8.6.5 || ==8.8.4
+tested-with: GHC ==8.6.5 || ==8.8.4 || ==8.10.7 || ==9.0.1 || ==9.2.5 || ==9.4.5 || ==9.6.1 || ==9.8.2 || ==9.10.1
 
 library
   exposed-modules:

@@ -1,5 +1,10 @@
 # Revision history for nix-thunk
 
+## 0.7.2.1
+* Loosen version bounds
+* Fix issue where thunk branches aren't updated when the user specifies --branch on nix-thunk update
+* Swap default.nix and lib.nix
+
 ## 0.7.2.0
 * Support retrieving revs that aren't on the default branch when a branch isn't specified.  To use this functionality, update your thunks.
 
@@ -14,7 +19,7 @@
 
 * Caching now works
 * [#42](https://github.com/obsidiansystems/nix-thunk/pull/42) Thunk read errors are now presented in a more informative manner.
-* [#43](https://github.com/obsidiansystems/nix-thunk/pull/43) `nix-thunk` will now ensure that any `git` processes invoked during its execution have a clean configuration. 
+* [#43](https://github.com/obsidiansystems/nix-thunk/pull/43) `nix-thunk` will now ensure that any `git` processes invoked during its execution have a clean configuration.
   This prevents `nix-thunk` crashing when e.g. the user's configuration `git` is valid only in a version newer than what `nix-thunk` links against, and works towards making thunks more reproducible by ensuring that thunk URIs are resolvable independently of the user's environment.
 
 ## 0.6.1.0
