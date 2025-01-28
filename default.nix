@@ -15,9 +15,17 @@ let defaultInputs = import ./defaultInputs.nix; in
     (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
 }:
 
-let myLib = import ./lib.nix { inherit haskell-nix pkgs; }; in
+let
 
-rec {
+  myLib = import ./lib.nix { inherit haskell-nix pkgs; }; in
+
+  inherit (import ./private.nix)
+    contentsMatch
+    isThunkWithThunkNix
+    ;
+
+in rec {
+
   command = (myLib.perGhc {}).command;
 
   # Retrieve source that is controlled by the hack-* scripts; it may be either a
@@ -25,32 +33,19 @@ rec {
   thunkSource = p:
     let
       contents = builtins.readDir p;
-
-      contentsMatch = { required, optional }:
-           (let all = required // optional; in all // contents == all)
-        && builtins.intersectAttrs required contents == required;
-
-      # Newer obelisk thunks include the feature of hackGet with a thunk.nix file in the thunk.
-      isObeliskThunkWithThunkNix =
-        let
-          packed = jsonFileName: {
-            required = { ${jsonFileName} = "regular"; "default.nix" = "regular"; "thunk.nix" = "regular"; };
-            optional = { ".attr-cache" = "directory"; };
-          };
-        in builtins.any (n: contentsMatch (packed n)) [ "git.json" "github.json" ];
-
+    in if isThunkWithThunkNix contents then import (p + "/thunk.nix")
+    else let # legacy cases
       filterArgs = x: removeAttrs x [ "branch" ];
       hasValidThunk = name: if builtins.pathExists (p + ("/" + name))
         then
-          contentsMatch {
+          contentsMatch contents {
             required = { ${name} = "regular"; };
             optional = { "default.nix" = "regular"; ".attr-cache" = "directory"; };
           }
           || throw "Thunk at ${toString p} has files in addition to ${name} and optionally default.nix and .attr-cache. Remove either ${name} or those other files to continue (check for leftover .git too)."
         else false;
     in
-      if isObeliskThunkWithThunkNix then import (p + "/thunk.nix")
-      else if hasValidThunk "git.json" then (
+      if hasValidThunk "git.json" then (
         let gitArgs = filterArgs (builtins.fromJSON (builtins.readFile (p + "/git.json")));
         in if builtins.elem "@" (lib.stringToCharacters gitArgs.url)
           then pkgs.fetchgitPrivate gitArgs

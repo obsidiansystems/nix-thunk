@@ -1,5 +1,5 @@
 let versions = import ./versions.nix;
-    nix-thunk = import ./lib.nix {};
+    nix-thunk = import ./packaging.nix {};
     instances = builtins.listToAttrs (map (ghcVersion: {
       name = ghcVersion;
       value = nix-thunk.perGhc { ghc = ghcVersion; };
