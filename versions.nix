@@ -12,6 +12,7 @@
       "ghc966"
       "ghc982"
       "ghc9101"
+      "ghc912"
     ];
     # TODO change back to `- 1`, but hlint is having trouble with GHC 9.10
     preferred = builtins.elemAt supported (builtins.length supported - 2);
