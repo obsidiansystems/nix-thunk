@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.7.2.2
+
+* Support GHC 9.12
+
 ## 0.7.2.1
 * Loosen version bounds
 * Fix issue where thunk branches aren't updated when the user specifies --branch on nix-thunk update
