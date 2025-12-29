@@ -80,6 +80,7 @@ import System.FilePath
 import System.IO.Error (isDoesNotExistError)
 import System.IO.Temp
 import System.Posix.Files
+import System.Environment (lookupEnv)
 import qualified Text.URI as URI
 
 --------------------------------------------------------------------------------
@@ -177,6 +178,11 @@ gitUriToText (GitUri uri)
   | (T.toLower . URI.unRText <$> URI.uriScheme uri) == Just "file"
   , Just (_, path) <- URI.uriPath uri
   = "/" <> T.intercalate "/" (map URI.unRText $ NonEmpty.toList path)
+  -- Radicle URIs: We stored the RID in the path to preserve case (see parseRadicleURI).
+  -- Reconstruct the proper rad://<rid>[/<nid>] format.
+  | (T.toLower . URI.unRText <$> URI.uriScheme uri) == Just "rad"
+  , Just (_, path) <- URI.uriPath uri
+  = "rad://" <> T.intercalate "/" (map URI.unRText $ NonEmpty.toList path)
   | otherwise = URI.render uri
 
 data GitSource = GitSource
@@ -267,7 +273,9 @@ getNixSha256ForUriUnpacked uri =
 nixPrefetchGit :: MonadNixThunk m => GitUri -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
   withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> gitUriToText uri <> " at " <> rev) $ do
-    out <- readProcessAndLogStderr Debug $ ignoreGitConfig $
+    radHomeEnv <- getRadicleEnv uri
+    let addRadEnv = if Map.null radHomeEnv then id else setEnvOverride (radHomeEnv <>)
+    out <- readProcessAndLogStderr Debug $ addRadEnv $ ignoreGitConfig $
       proc nixPrefetchGitPath $ filter (/="")
         [ "--url", T.unpack $ gitUriToText uri
         , "--rev", T.unpack rev
@@ -278,6 +286,28 @@ nixPrefetchGit uri rev fetchSubmodules =
     case parseMaybe (Aeson..: "sha256") =<< Aeson.decodeStrict (encodeUtf8 out) of
       Nothing -> failWith $ "nix-prefetch-git: unrecognized output " <> out
       Just x -> pure x
+
+-- | Check if a GitUri is a radicle URI (rad:// scheme)
+isRadicleUri :: GitUri -> Bool
+isRadicleUri (GitUri uri) =
+  (T.toLower . URI.unRText <$> URI.uriScheme uri) == Just "rad"
+
+-- | Get the RAD_HOME environment variable setting for radicle URLs.
+-- Radicle's git-remote-rad helper needs access to the user's radicle profile.
+-- Since we set HOME=/dev/null in ignoreGitConfig, we need to explicitly
+-- pass RAD_HOME to point to the user's actual radicle profile.
+getRadicleEnv :: MonadIO m => GitUri -> m (Map String String)
+getRadicleEnv uri
+  | isRadicleUri uri = do
+      mHome <- liftIO $ lookupEnv "HOME"
+      mRadHome <- liftIO $ lookupEnv "RAD_HOME"
+      -- Use RAD_HOME if already set, otherwise derive from HOME
+      pure $ case mRadHome of
+        Just radHome -> Map.singleton "RAD_HOME" radHome
+        Nothing -> case mHome of
+          Just home -> Map.singleton "RAD_HOME" (home </> ".radicle")
+          Nothing -> Map.empty
+  | otherwise = pure Map.empty
 
 data ReadThunkError
   = ReadThunkError_UnrecognizedThunk
@@ -1134,9 +1164,15 @@ gitCloneForThunkUnpack
   -> FilePath -- ^ Directory to clone into
   -> m ()
 gitCloneForThunkUnpack gitSrc commit dir = do
-  _ <- readGitProcess dir $ [ "clone" ]
+  -- For radicle URLs, we need to pass RAD_HOME so git-remote-rad can
+  -- access the user's radicle profile
+  let gitUri = _gitSource_url gitSrc
+  radHomeEnv <- getRadicleEnv gitUri
+  let addRadEnv = if Map.null radHomeEnv then id else setEnvOverride (radHomeEnv <>)
+  _ <- readProcessAndLogOutput (Notice, Notice) $ addRadEnv $ ignoreGitConfig $ gitProc dir $
+    [ "clone" ]
     ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
-    ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
+    ++  [ T.unpack $ gitUriToText gitUri ]
     ++  do branch <- maybeToList $ _gitSource_branch gitSrc
            [ "--branch", T.unpack $ untagName branch ]
   _ <- readGitProcess dir ["reset", "--hard", refToHexString commit]
@@ -1510,21 +1546,25 @@ uriToThunkSource (GitUri u) mPrivate
     getIsPrivate = maybe (guessGitRepoIsPrivate $ GitUri u) pure mPrivate
 
 guessGitRepoIsPrivate :: MonadNixThunk m => GitUri -> m Bool
-guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
-  [] -> pure True
-  uriAttempt:xs -> do
-    result <- readCreateProcessWithExitCode $
-      isolateGitProc $
-        gitProcNoRepo
-          [ "ls-remote"
-          , "--quiet"
-          , "--exit-code"
-          , "--symref"
-          , T.unpack $ gitUriToText uriAttempt
-          ]
-    case result of
-      (ExitSuccess, _, _) -> pure False -- Must be a public repo
-      _ -> loop xs
+guessGitRepoIsPrivate uri
+  -- Radicle repos don't have public HTTP(S) equivalents, so they're always "private"
+  -- (accessible only via the radicle network with proper authentication)
+  | isRadicleUri uri = pure True
+  | otherwise = flip fix urisToTry $ \loop -> \case
+      [] -> pure True
+      uriAttempt:xs -> do
+        result <- readCreateProcessWithExitCode $
+          isolateGitProc $
+            gitProcNoRepo
+              [ "ls-remote"
+              , "--quiet"
+              , "--exit-code"
+              , "--symref"
+              , T.unpack $ gitUriToText uriAttempt
+              ]
+        case result of
+          (ExitSuccess, _, _) -> pure False -- Must be a public repo
+          _ -> loop xs
   where
     urisToTry = nubOrd $
       -- Include the original URI if it isn't using SSH because SSH will certainly fail.
@@ -1586,10 +1626,10 @@ gitThunkRev
   -> m ThunkRev
 gitThunkRev s commit = do
   let u = _gitSource_url s
-      protocols = ["file", "https", "ssh", "git"]
+      protocols = ["file", "https", "ssh", "git", "rad"]
       scheme = maybe "file" URI.unRText $ URI.uriScheme $ (\(GitUri x) -> x) u
   unless (T.toLower scheme `elem` protocols) $
-    failWith $ "obelisk currently only supports "
+    failWith $ "nix-thunk currently only supports "
       <> T.intercalate ", " protocols <> " protocols for plain Git remotes"
   hash <- nixPrefetchGit u commit $ _gitSource_fetchSubmodules s
   putLog Informational $ "Nix sha256 is " <> hash
@@ -1627,7 +1667,7 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
     uriMsg = gitUriToText uri
 
 parseGitUri :: Text -> Maybe GitUri
-parseGitUri x = GitUri <$> (parseFileURI x <|> parseAbsoluteURI x <|> parseSshShorthand x)
+parseGitUri x = GitUri <$> (parseFileURI x <|> parseRadicleURI x <|> parseAbsoluteURI x <|> parseSshShorthand x)
 
 parseFileURI :: Text -> Maybe URI.URI
 parseFileURI uri = if "/" `T.isPrefixOf` uri then parseAbsoluteURI ("file://" <> uri) else Nothing
@@ -1637,6 +1677,20 @@ parseAbsoluteURI uri = do
   parsedUri <- URI.mkURI uri
   guard $ URI.isPathAbsolute parsedUri
   pure parsedUri
+
+-- | Parse radicle URIs of the form rad://<rid>[/<nid>]
+-- Radicle URIs have the repository ID as the authority, and an optional
+-- node ID in the path. The repository ID is case-sensitive, but the modern-uri
+-- library normalizes hosts to lowercase per RFC 3986. To preserve case, we store
+-- the RID in the path component instead, using a dummy "localhost" host.
+-- The gitUriToText function reconstructs the proper rad:// URL.
+parseRadicleURI :: Text -> Maybe URI.URI
+parseRadicleURI uri = do
+  guard $ "rad://" `T.isPrefixOf` uri
+  -- Extract the part after "rad://" and store it in the path to preserve case
+  let rest = T.drop 6 uri  -- drop "rad://"
+  -- Create a URI with the original text preserved in the path
+  URI.mkURI $ "rad://localhost/" <> rest
 
 parseSshShorthand :: Text -> Maybe URI.URI
 parseSshShorthand uri = do

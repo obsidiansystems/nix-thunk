@@ -73,6 +73,18 @@ executable nix-thunk
     , optparse-applicative
     , text
 
+test-suite test
+  type:             exitcode-stdio-1.0
+  main-is:          Main.hs
+  hs-source-dirs:   test
+  default-language: Haskell2010
+  ghc-options:      -Wall
+  build-depends:
+      base
+    , hspec >=2.7 && <2.12
+    , nix-thunk
+    , text
+
 source-repository head
   type:     git
   location: git://github.com/obsidiansystems/nix-thunk.git
