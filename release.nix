@@ -12,6 +12,11 @@ let versions = import ./versions.nix;
         inherit (this) command;
         inherit (nix-thunk) packedThunkNixpkgs;
       };
+      tests-radicle = import ./tests-radicle.nix {
+        inherit (this) command;
+        inherit (nix-thunk) packedThunkNixpkgs;
+      };
+      unit-tests = this.project.hsPkgs.nix-thunk.checks.test;
       recurseForDerivations = true;
     };
 in {
