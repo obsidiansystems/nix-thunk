@@ -2,9 +2,11 @@
 , packedThunkNixpkgs # The nixpkgs that nix-thunk uses
 }:
 let
-  # Get a version of nixpkgs corresponding to release-22.05, which
-  # contains the python based tests and recursive nix.
-  pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/478f3cbc8448b5852539d785fbfe9a53304133be.tar.gz) {};
+  # Use nixos-24.11 for modern NixOS VM tests
+  pkgs = import (builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/nixos-24.11.tar.gz";
+    sha256 = "1s2gr5rcyqvpr58vxdcb095mdhblij9bfzaximrva2243aal3dgx";
+  }) {};
   sshKeys   = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
@@ -42,8 +44,8 @@ in
 
       client = {
         imports = [ (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix) ];
-        nix.useSandbox = false;
-        nix.binaryCaches = [];
+        nix.settings.sandbox = false;
+        nix.settings.substituters = [];
         environment.systemPackages = [
           pkgs.nix-prefetch-git
           pkgs.git
@@ -63,8 +65,8 @@ in
       # GCD of those failure modes is "not present at all", thus:
       noNixThunk = {
         imports = [ (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix) ];
-        nix.useSandbox = false;
-        nix.binaryCaches = [];
+        nix.settings.sandbox = false;
+        nix.settings.substituters = [];
         environment.systemPackages = [
           pkgs.git
           pkgs.rsync
@@ -89,7 +91,7 @@ in
           git config --global user.name "Your Name";
         """)
 
-      githost.wait_for_open_port("22")
+      githost.wait_for_open_port(22)
 
       with subtest("the clients can access the server via ssh"):
         for machine in [client, noNixThunk]:
