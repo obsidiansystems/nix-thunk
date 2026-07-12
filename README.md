@@ -19,9 +19,44 @@ nix-thunk makes them "transparent" to Nix scripts, so any script that calls `imp
 
 ## Installation
 
+`nix-thunk` is available from nixpkgs as `haskellPackages.nix-thunk`:
+
+```bash
+nix-env -f '<nixpkgs>' -iA haskellPackages.nix-thunk
+```
+
+To install the latest version from this repository instead:
+
 ```bash
 nix-env -f https://github.com/obsidiansystems/nix-thunk/archive/master.tar.gz -iA command
 ```
+
+Builds from this repository are available from the Reflex binary cache. On
+single-user Nix, or when running as a trusted user, it can be enabled for just
+this installation:
+
+```bash
+nix-env -f https://github.com/obsidiansystems/nix-thunk/archive/master.tar.gz \
+  -iA command \
+  --option extra-substituters https://nixcache.reflex-frp.org \
+  --option extra-trusted-public-keys \
+    'ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI='
+```
+
+Multi-user Nix restricts those options to trusted users. To make the cache
+available persistently on NixOS, add the following values to any existing
+substituter and public-key lists in `/etc/nixos/configuration.nix`:
+
+```nix
+nix.settings.substituters = [ "https://nixcache.reflex-frp.org" ];
+nix.settings.trusted-public-keys = [
+  "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI="
+];
+```
+
+Run `sudo nixos-rebuild switch` after changing the configuration. The cache is
+most useful when installing from this repository; nixpkgs installations can
+normally use the standard nixpkgs binary cache.
 
 **WARNING**: It is _not_ possible to compile `nix-thunk` without Nix.
 To ensure that packed thunks are buildable even in environments where diamond paths are unavailable (specifically `<nixpkgs>`), `nix-thunk` _must_ be built with knowledge of a known-good nixpkgs, _and_ for `nix-thunk` to be able to manipulate these thunks, it must _always_ be the same version of nixpkgs.
