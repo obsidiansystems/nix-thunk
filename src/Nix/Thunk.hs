@@ -46,7 +46,6 @@ module Nix.Thunk
   , refFromHexString
   ) where
 
-import Bindings.Cli.Coreutils (cp)
 import Bindings.Cli.Git
 import Bindings.Cli.Nix
 import Cli.Extras
@@ -57,7 +56,7 @@ import Control.Monad
 import Control.Monad.Catch (MonadCatch, MonadMask, handle)
 import Control.Monad.Except
 import Control.Monad.Extra (findM)
-import Control.Monad.Fail (MonadFail)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Log (MonadLog)
 import Crypto.Hash (Digest, HashAlgorithm, SHA1, digestFromByteString)
 import Data.Aeson ((.=))
@@ -91,7 +90,6 @@ import Data.Text.Encoding
 import qualified Data.Text.IO as T
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Traversable
-import Data.Typeable (Typeable)
 import Data.Yaml (parseMaybe)
 import GitHub
 import GitHub.Data.Name
@@ -99,7 +97,7 @@ import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO.Error (isDoesNotExistError)
-import System.IO.Temp
+import System.IO.Temp (withTempDirectory)
 import System.Posix.Files
 import qualified Text.URI as URI
 
@@ -109,7 +107,7 @@ import qualified Text.URI as URI
 
 type MonadInfallibleNixThunk m =
   ( CliLog m
-  , HasCliConfig m
+  , HasCliConfig NixThunkError m
   , MonadIO m
   , MonadMask m
   )
@@ -126,7 +124,8 @@ data NixThunkError
 
 prettyNixThunkError :: NixThunkError -> Text
 prettyNixThunkError = \case
-  NixThunkError_ProcessFailure pf -> prettyProcessFailure pf
+  NixThunkError_ProcessFailure (ProcessFailure cmd code) ->
+    "Process exited with code " <> T.pack (show code) <> "; " <> reconstructCommand cmd
   NixThunkError_Unstructured msg -> msg
 
 makePrisms ''NixThunkError
@@ -247,11 +246,6 @@ forgetGithub useSsh s = GitSource
   , _gitSource_fetchSubmodules = False
   , _gitSource_private = _gitHubSource_private s
   }
-
-getThunkGitBranch :: ThunkPtr -> Maybe Text
-getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
-  ThunkSource_GitHub s -> _gitHubSource_branch s
-  ThunkSource_Git s -> _gitSource_branch s
 
 commitNameToRef :: Name Commit -> Ref SHA1
 commitNameToRef (N c) = refFromHex $ encodeUtf8 c
@@ -520,14 +514,6 @@ createThunk target ptrInfo =
       liftIO $ createDirectoryIfMissing True $ takeDirectory fullPath
       f fullPath
 
-createThunkWithLatest :: MonadNixThunk m => FilePath -> ThunkSource -> m ()
-createThunkWithLatest target s = do
-  rev <- getLatestRev s
-  createThunk target $ Right $ ThunkPtr
-    { _thunkPtr_source = s
-    , _thunkPtr_rev = rev
-    }
-
 updateThunkToLatest :: MonadNixThunk m => ThunkUpdateConfig -> FilePath -> m ()
 updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = do
   withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
@@ -757,7 +743,7 @@ parseJsonObject p bytes = Aeson.parseEither p =<< Aeson.eitherDecode bytes
 nixBuildThunkAttrWithCache
   :: ( MonadIO m
      , MonadLog Output m
-     , HasCliConfig m
+     , HasCliConfig NixThunkError m
      , MonadMask m
      , MonadError NixThunkError m
      , MonadFail m
@@ -809,7 +795,7 @@ nixBuildThunkAttrWithCache thunkSpec thunkDir attr = do
 -- | Build a nix attribute, and cache the result if possible
 nixBuildAttrWithCache
   :: ( MonadLog Output m
-     , HasCliConfig m
+     , HasCliConfig NixThunkError m
      , MonadIO m
      , MonadMask m
      , MonadError NixThunkError m
@@ -834,32 +820,6 @@ nixBuildAttrWithCache exprPath attr = readThunk exprPath >>= \case
         , _target_attr = Just attr
         , _target_expr = Nothing
         }
-
--- | Safely update thunk using a custom action
---
--- A temporary working space is used to do any update. When the custom
--- action successfully completes, the resulting (packed) thunk is copied
--- back to the original location.
-updateThunk :: MonadNixThunk m => FilePath -> (FilePath -> m a) -> m a
-updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
-  p' <- copyThunkToTmp tmpDir p
-  unpackThunk' True p'
-  result <- f p'
-  updateThunkFromTmp p'
-  return result
-  where
-    copyThunkToTmp tmpDir thunkDir = readThunk thunkDir >>= \case
-      Left err -> failWith $ "withThunkUnpacked: " <> T.pack (show err)
-      Right ThunkData_Packed{} -> do
-        let tmpThunk = tmpDir </> "thunk"
-        callProcessAndLogOutput (Notice, Error) $
-          proc cp ["-r", "-T", thunkDir, tmpThunk]
-        return tmpThunk
-      Right _ -> failWith "Thunk is not packed"
-    updateThunkFromTmp p' = do
-      _ <- packThunk' True (ThunkPackConfig False (ThunkConfig Nothing)) p'
-      callProcessAndLogOutput (Notice, Error) $
-        proc cp ["-r", "-T", p', p]
 
 finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
 finalMsg noTrail s = if noTrail then Nothing else Just s
@@ -1300,12 +1260,12 @@ parseSshShorthand uri = do
 
 -- | Represent a git reference (SHA1)
 newtype Ref hash = Ref { unRef :: Digest hash }
-  deriving (Eq, Ord, Typeable)
+  deriving (Eq, Ord)
 
 -- | Invalid Reference exception raised when
 -- using something that is not a ref as a ref.
 newtype RefInvalid = RefInvalid { unRefInvalid :: ByteString }
-  deriving (Show, Eq, Data, Typeable)
+  deriving (Show, Eq, Data)
 
 instance Exception RefInvalid
 
