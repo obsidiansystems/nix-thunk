@@ -1,12 +1,12 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PackageImports #-}
 import "nix-thunk" Nix.Thunk
 import "nix-thunk" Nix.Thunk.Command
 import Options.Applicative
 import Cli.Extras
-import qualified Data.Text.IO as T
+import Data.List (isInfixOf)
 import System.Environment
 import System.Exit
+import System.IO (hIsTerminalDevice, stdout)
 import Data.Void
 
 data Args = Args
@@ -37,11 +37,14 @@ parserPrefs = defaultPrefs
 
 main :: IO Void
 main = do
-  args <- getArgs
-  args' <- handleParseResult $ execParserPure parserPrefs argsInfo args
-  cliConf <- mkDefaultCliConfig args
-  runCli cliConf (runThunkCommand (_args_command args')) >>= \case
-    Right () -> exitWith ExitSuccess
-    Left e -> do
-      T.putStrLn $ prettyNixThunkError e
-      exitWith $ ExitFailure 2
+  rawArgs <- getArgs
+  args' <- handleParseResult $ execParserPure parserPrefs argsInfo rawArgs
+  isTerm <- hIsTerminalDevice stdout
+  term <- lookupEnv "TERM"
+  let logLevel = if _args_verbose args' then Debug else Notice
+      inShellCompletion = "completion" `isInfixOf` unwords rawArgs
+      notInteractive = not $ isTerm && not inShellCompletion && term /= Just "dumb"
+      handleError e = (prettyNixThunkError e, ExitFailure 2)
+  cliConf <- newCliConfig logLevel notInteractive notInteractive handleError
+  runCli cliConf $ runThunkCommand $ _args_command args'
+  exitWith ExitSuccess
