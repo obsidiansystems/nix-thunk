@@ -17,8 +17,8 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command
-            extra-substituters = ${{ vars.NIX_CACHE_URL }}
-            extra-trusted-public-keys = ${{ vars.NIX_CACHE_PUBLIC_KEY }}
+            extra-substituters = https://cache.iog.io ${{ vars.NIX_CACHE_URL }}
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
       - name: Build
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
