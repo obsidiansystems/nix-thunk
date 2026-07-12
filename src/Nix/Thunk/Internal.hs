@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -96,6 +97,12 @@ type MonadNixThunk m =
   , CliThrow NixThunkError m
   , MonadFail m
   )
+
+-- | Runs a 'MonadNixThunk' action without interactive terminal output.
+runMonadNixThunk :: forall a. (forall m. MonadNixThunk m => m a) -> IO (Either NixThunkError a)
+runMonadNixThunk x = do
+  cliConf <- newCliConfig Error True True (\e -> (prettyNixThunkError e, ExitFailure 1))
+  runCli cliConf $ catchError (Right <$> x) (pure . Left)
 
 data NixThunkError
    = NixThunkError_ProcessFailure ProcessFailure
@@ -430,7 +437,7 @@ readThunkWith
   => NonEmpty (NonEmpty ThunkSpec) -> FilePath -> m (Either ReadThunkError ThunkData)
 readThunkWith specTypes dir = do
   dirFiles <- Set.fromList <$> liftIO (listDirectory dir)
-  let specs = concatMap toList $ toList $ NonEmpty.transpose specTypes -- Interleave spec types so we try each one in a "fair" ordering
+  let specs = concatMap toList (NonEmpty.transpose specTypes) -- Interleave spec types so we try each one in a "fair" ordering
   flip fix specs $ \loop -> \case
     [] -> pure $ Left ReadThunkError_UnrecognizedThunk
     spec:rest -> runExceptT (matchThunkSpecToDir spec dir dirFiles) >>= \case

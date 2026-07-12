@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+## 0.7.3.0
+
+* Add `runMonadNixThunk` to make it easier to run the actions defined in the library.
+
 ## 0.7.2.2
 
 * Support GHC 9.12

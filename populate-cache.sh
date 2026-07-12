@@ -37,7 +37,7 @@ trap cleanup EXIT
 printf '%s\n' "$NIX_CACHE_PRIVATE_KEY" > "$key_file"
 chmod 600 "$key_file"
 
-nix-build "$repo_root/release.nix" -A command --no-out-link \
+nix-build "$repo_root/release.nix" -A command -A check-hlint --no-out-link \
   --option extra-substituters "$iog_cache $reflex_cache" \
   --option extra-trusted-public-keys "$iog_public_key" \
   > "$outputs_file"

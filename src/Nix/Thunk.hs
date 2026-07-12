@@ -1,5 +1,6 @@
 module Nix.Thunk
-  ( ThunkSource (..)
+  ( runMonadNixThunk
+  , ThunkSource (..)
   , GitHubSource (..)
   , ThunkRev (..)
   , getLatestRev
