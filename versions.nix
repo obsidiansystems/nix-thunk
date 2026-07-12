@@ -5,7 +5,7 @@
     # each GHC major release (i.e. maximum z in ghc-x.y.z) that is available in
     # our pin of haskell.nix.
     # NOTE: This should be in ascending order, with the newest GHC at the bottom
-    supported = [ "ghc912" ];
+    supported = [ "ghc9122" ];
     preferred = builtins.elemAt supported (builtins.length supported - 1);
   };
 }

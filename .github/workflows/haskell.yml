@@ -16,7 +16,7 @@ jobs:
             extra-substituters = https://cache.iog.io https://nixcache.reflex-frp.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
       - name: Build
-        run: nix-build release.nix --no-out-link | tee "$RUNNER_TEMP/nix-build-paths"
+        run: nix-build release.nix -A command -A byGhc.ghc9122.tests --no-out-link | tee "$RUNNER_TEMP/nix-build-paths"
       - name: Upload to S3 binary cache
         if: github.event_name == 'push'
         env:
