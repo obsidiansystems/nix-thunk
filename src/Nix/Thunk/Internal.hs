@@ -437,7 +437,7 @@ readThunkWith
   => NonEmpty (NonEmpty ThunkSpec) -> FilePath -> m (Either ReadThunkError ThunkData)
 readThunkWith specTypes dir = do
   dirFiles <- Set.fromList <$> liftIO (listDirectory dir)
-  let specs = concatMap toList $ toList $ NonEmpty.transpose specTypes -- Interleave spec types so we try each one in a "fair" ordering
+  let specs = concatMap toList (NonEmpty.transpose specTypes) -- Interleave spec types so we try each one in a "fair" ordering
   flip fix specs $ \loop -> \case
     [] -> pure $ Left ReadThunkError_UnrecognizedThunk
     spec:rest -> runExceptT (matchThunkSpecToDir spec dir dirFiles) >>= \case
