@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -96,6 +97,12 @@ type MonadNixThunk m =
   , CliThrow NixThunkError m
   , MonadFail m
   )
+
+-- | Runs a 'MonadNixThunk' action without interactive terminal output.
+runMonadNixThunk :: forall a. (forall m. MonadNixThunk m => m a) -> IO (Either NixThunkError a)
+runMonadNixThunk x = do
+  cliConf <- newCliConfig Error True True (\e -> (prettyNixThunkError e, ExitFailure 1))
+  runCli cliConf $ catchError (Right <$> x) (pure . Left)
 
 data NixThunkError
    = NixThunkError_ProcessFailure ProcessFailure
