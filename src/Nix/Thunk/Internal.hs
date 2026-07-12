@@ -152,7 +152,7 @@ data ThunkSource
 
 thunkSourceToGitSource :: ThunkSource -> GitSource
 thunkSourceToGitSource = \case
-  ThunkSource_GitHub s -> forgetGithub False s
+  ThunkSource_GitHub s -> forgetGithub (_gitHubSource_private s) s
   ThunkSource_Git s -> s
 
 setThunkSourceBranch :: Maybe (Name Branch) -> ThunkSource -> ThunkSource
