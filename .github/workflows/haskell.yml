@@ -10,23 +10,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
         with:
           extra_nix_config: |
             experimental-features = nix-command
-            extra-substituters = https://cache.iog.io ${{ vars.NIX_CACHE_URL }}
+            extra-substituters = https://cache.iog.io https://nixcache.reflex-frp.org
             extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
       - name: Build
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
         run: nix-build release.nix --no-out-link | tee "$RUNNER_TEMP/nix-build-paths"
       - name: Upload to S3 binary cache
-        if: github.event_name == 'push' && env.AWS_ACCESS_KEY_ID != ''
+        if: github.event_name == 'push'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
