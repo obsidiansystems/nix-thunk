@@ -1,15 +1,15 @@
 cabal-version:      >=1.10
 name:               nix-thunk
-version:            0.3.0.0
+version:            0.7.2.2
 license:            BSD3
 license-file:       LICENSE
-copyright:          Obsidian Systems LLC 2020
+copyright:          Obsidian Systems LLC 2020-2022
 maintainer:         maintainer@obsidian.systems
 author:             Obsidian Systems LLC
 bug-reports:        https://github.com/obsidiansystems/nix-thunk
 synopsis:           Lightweight dependency management with Nix
 description:
-  nix-thunk lets you manage source code depencies in a lightweight and reproducible way, using Nix.  Each source repository is represented by a stub directory, which refers to the original Git repository.  nix-thunk can easily update these dependencies.
+  nix-thunk lets you manage source code dependencies in a lightweight and reproducible way, using Nix.  Each source repository is represented by a stub directory, which refers to the original Git repository.  nix-thunk can easily update these dependencies.
   .
   If you need to make improvements to the original repositories, nix-thunk can unpack them in-place, so that changes can be tested right away, and then pack them back up when you're done.  This makes it easy to send a pull request to the upstream repo while your project continues on a fork, then switch back to upstream once your pull request has been merged.
 
@@ -19,11 +19,12 @@ extra-source-files:
   CHANGELOG.md
   README.md
 
-tested-with: GHC ==9.12.3
+tested-with: GHC ==8.6.5 || ==8.8.4 || ==8.10.7 || ==9.0.1 || ==9.2.5 || ==9.4.5 || ==9.6.1 || ==9.8.2 || ==9.10.1 || ==9.12.2
 
 library
   exposed-modules:
     Nix.Thunk
+    Nix.Thunk.Internal
     Nix.Thunk.Command
 
   hs-source-dirs:   src
@@ -34,9 +35,9 @@ library
     , aeson-pretty          >=0.8.7    && <0.9
     , base                  >=4.12.0.0 && <4.22
     , bytestring            >=0.10.8.2 && <0.13
-    , cli-extras            >=0.1.0.1  && <0.3
-    , cli-git               >=0.1.0.1  && <0.3
-    , cli-nix               >=0.1.0.1  && <0.3
+    , cli-extras            >=0.2.1.0  && <0.3
+    , cli-git               >=0.2.0.0  && <0.3
+    , cli-nix               >=0.2.0.0  && <0.3
     , containers            >=0.6.0.1  && <0.8
     , cryptonite            >=0.25     && <0.31
     , data-default          >=0.7.1.1  && <0.9
@@ -54,7 +55,7 @@ library
     , modern-uri            >=0.3.1.0  && <0.4
     , monad-logger          >=0.3.30   && <0.4
     , mtl                   >=2.2.2    && <2.4
-    , optparse-applicative  >=0.14.3.0 && <0.19
+    , optparse-applicative  >=0.14.3.0 && <0.20
     , temporary             >=1.3      && <1.4
     , text                  >=1.2.3.1  && <2.2
     , time                  >=1.8.0.2  && <1.15
@@ -66,11 +67,11 @@ executable nix-thunk
   main-is:          src-bin/nix-thunk.hs
   default-language: Haskell2010
   build-depends:
-      base                  >=4.12.0.0 && <4.22
-    , cli-extras            >=0.1.0.1  && <0.3
+      base
+    , cli-extras
     , nix-thunk
-    , optparse-applicative  >=0.14.3.0 && <0.19
-    , text                  >=1.2.3.1  && <2.2
+    , optparse-applicative
+    , text
 
 source-repository head
   type:     git

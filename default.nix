@@ -1,31 +1,27 @@
-{ pkgs ? import ./dep/ci/nixos-26.05 {}
-, ghc ? "ghc912"
+# This file is intended to be used in the Nix code of projects using
+# `nix-thunk`. As such, it is supposed to be very stable.
+#
+# Packed thunks are self-contained, but the intended use-case of
+# `nix-thunk` is that the ambient project should be able to use the
+# thunk whether it is unpacked or not. That is a bit more tricky, and so
+# that is what these functions help with.
+
+let defaultInputs = import ./defaultInputs.nix; in
+{
+  haskell-nix ? defaultInputs.haskell-nix {},
+  pkgs ? defaultInputs.pkgs { inherit haskell-nix; },
+  lib ? pkgs.lib,
+  gitignoreSource ?
+    (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
 }:
 
-with pkgs.haskell.lib;
+let myLib = import ./lib.nix { inherit haskell-nix pkgs; }; in
 
-let
-  inherit (pkgs) lib;
+rec {
+  command = (myLib.perGhc {}).command;
 
-in rec {
-  haskellPackages = pkgs.haskell.packages."${ghc}".override {
-    overrides = self: super: {
-      cli-extras = doJailbreak (self.callCabal2nix "cli-extras" (thunkSource ./dep/cli-extras) {});
-      cli-nix = overrideCabal (doJailbreak (self.callCabal2nix "cli-nix" (thunkSource ./dep/cli-nix) {})) {
-        librarySystemDepends = with pkgs; [ nix nix-prefetch-git ];
-      };
-      cli-git = overrideCabal (doJailbreak (self.callCabal2nix "cli-git" (thunkSource ./dep/cli-git) {})) {
-        librarySystemDepends = [ pkgs.git ];
-      };
-      nix-thunk = self.callCabal2nix "nix-thunk" (gitignoreSource ./.) {};
-    };
-  };
-
-  command = haskellPackages.generateOptparseApplicativeCompletions [ "nix-thunk" ] (justStaticExecutables haskellPackages.nix-thunk);
-
-  inherit (import ./dep/gitignore.nix { inherit lib; }) gitignoreSource;
-
-  # Retrieve source that is controlled by the hack-* scripts; it may be either a stub or a checked-out git repo
+  # Retrieve source that is controlled by the hack-* scripts; it may be either a
+  # stub or a checked-out git repo
   thunkSource = p:
     let
       contents = builtins.readDir p;
@@ -53,7 +49,7 @@ in rec {
           || throw "Thunk at ${toString p} has files in addition to ${name} and optionally default.nix and .attr-cache. Remove either ${name} or those other files to continue (check for leftover .git too)."
         else false;
     in
-      if isObeliskThunkWithThunkNix then import (p + /thunk.nix)
+      if isObeliskThunkWithThunkNix then import (p + "/thunk.nix")
       else if hasValidThunk "git.json" then (
         let gitArgs = filterArgs (builtins.fromJSON (builtins.readFile (p + "/git.json")));
         in if builtins.elem "@" (lib.stringToCharacters gitArgs.url)
