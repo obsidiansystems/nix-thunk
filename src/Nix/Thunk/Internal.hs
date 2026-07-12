@@ -33,7 +33,7 @@ import Control.Applicative
 import Control.Exception (Exception, displayException, throw, try)
 import Control.Lens ((.~), ifor, ifor_, makePrisms)
 import Control.Monad
-import Control.Monad.Catch (MonadCatch, MonadMask, handle)
+import Control.Monad.Catch (MonadCatch, MonadMask, finally, handle)
 import Control.Monad.Except
 import Control.Monad.Extra (findM)
 import Control.Monad.IO.Class (MonadIO(liftIO))
@@ -76,9 +76,11 @@ import GitHub.Data.Name
 import System.Directory
 import System.Exit
 import System.FilePath
+import System.IO (IOMode(ReadMode), hClose, openBinaryFile)
 import System.IO.Error (isDoesNotExistError)
 import System.IO.Temp
 import System.Posix.Files
+import qualified System.Process as Process
 import qualified Text.URI as URI
 
 --------------------------------------------------------------------------------
@@ -1215,6 +1217,9 @@ ensureGitRevExist gitDir tptr = do
 readGitProcess :: MonadNixThunk m => FilePath -> [String] -> m Text
 readGitProcess dir = readProcessAndLogOutput (Notice, Notice) . ignoreGitConfig . gitProc dir
 
+readGitProcessQuiet :: MonadNixThunk m => FilePath -> [String] -> m Text
+readGitProcessQuiet dir = readProcessAndLogOutput (Debug, Error) . ignoreGitConfig . gitProc dir
+
 -- | Prevent the called process from reading Git configuration. This
 -- isn't as locked-down as 'isolateGitProc' to make sure the Git process
 -- can still interact with the user (e.g. @ssh-askpass@), but it still
@@ -1239,15 +1244,12 @@ packThunk :: MonadNixThunk m => ThunkPackConfig -> FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
 packThunk' :: MonadNixThunk m => Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
-packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
-  Right ThunkData_Packed{} -> failWith [i|Thunk at ${thunkDir} is is already packed|]
-  _ -> withSpinner'
+packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = do
+  let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
+  (thunkPtr, isWorktree) <- preparePackedThunk checkClean thunkConfig thunkDir
+  withSpinner'
     ("Packing thunk " <> T.pack thunkDir)
-    (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $
-    do
-      let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
-      (thunkPtr, isWorktree) <- first (modifyThunkPtrByConfig thunkConfig)
-        <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
+    (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
       if isWorktree
         then void $ do
           -- Remove the branch locally, and then remove the worktree
@@ -1260,6 +1262,121 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
         else liftIO $ removePathForcibly thunkDir
       createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
+
+preparePackedThunk
+  :: MonadNixThunk m
+  => CheckClean
+  -> ThunkConfig
+  -> FilePath
+  -> m (ThunkPtr, Bool)
+preparePackedThunk checkClean thunkConfig thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+  Right ThunkData_Packed{} -> failWith [i|Thunk at ${thunkDir} is already packed|]
+  _ -> first (modifyThunkPtrByConfig thunkConfig)
+    <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
+
+-- | Stage the packed representation of an unpacked thunk in its enclosing Git
+-- repository without changing the checkout.
+stageThunk :: MonadNixThunk m => ThunkConfig -> FilePath -> m ThunkPtr
+stageThunk thunkConfig thunkDir = do
+  (parentRepo, thunkPath) <- findEnclosingGitRepo thunkDir
+  ensureNoStagedChanges parentRepo thunkPath
+  withSpinner'
+    ("Staging thunk " <> T.pack thunkDir)
+    (Just $ const $ "Staged thunk " <> T.pack thunkDir) $ do
+      (thunkPtr, _) <- preparePackedThunk CheckClean_FullCheck thunkConfig thunkDir
+      withSystemTempDirectory "nix-thunk-stage-" $ \tmpDir -> do
+        let packedDir = tmpDir </> "thunk"
+        createThunk packedDir $ Right thunkPtr
+        stagePackedThunk parentRepo thunkPath packedDir thunkPtr tmpDir
+      pure thunkPtr
+
+findEnclosingGitRepo :: MonadNixThunk m => FilePath -> m (FilePath, FilePath)
+findEnclosingGitRepo thunkDir = do
+  absoluteThunk <- liftIO $ normalise <$> makeAbsolute thunkDir
+  thunkPath <- liftIO $ canonicalizePath thunkDir
+  when (absoluteThunk /= thunkPath) $
+    failWith $ "Refusing to stage a thunk through a symlinked path: " <> T.pack thunkDir
+  parentRepo <- T.unpack . T.strip <$> readGitProcessQuiet (takeDirectory thunkPath)
+    ["rev-parse", "--show-toplevel"]
+  parentRepo' <- liftIO $ canonicalizePath parentRepo
+  let relativeThunk = normalise $ makeRelative parentRepo' thunkPath
+  when (relativeThunk == "." || isAbsolute relativeThunk || ".." `elem` splitDirectories relativeThunk) $
+    failWith $ "Thunk is not contained by an enclosing Git repository: " <> T.pack thunkDir
+  pure (parentRepo', relativeThunk)
+
+ensureNoStagedChanges :: MonadNixThunk m => FilePath -> FilePath -> m ()
+ensureNoStagedChanges parentRepo thunkPath = do
+  (headStatus, _, _) <- readCreateProcessWithExitCode $ ignoreGitConfig $
+    gitProc parentRepo ["rev-parse", "--verify", "HEAD"]
+  staged <- case headStatus of
+    ExitSuccess -> do
+      (status, _, _) <- readCreateProcessWithExitCode $ ignoreGitConfig $
+        gitProc parentRepo ["diff", "--cached", "--quiet", "--ita-visible-in-index", "--", thunkPath]
+      case status of
+        ExitSuccess -> pure False
+        ExitFailure 1 -> pure True
+        ExitFailure _ -> failWith $ "Could not inspect staged changes under " <> T.pack thunkPath
+    ExitFailure _ -> do
+      (symbolicStatus, _, _) <- readCreateProcessWithExitCode $ ignoreGitConfig $
+        gitProc parentRepo ["symbolic-ref", "--quiet", "HEAD"]
+      case symbolicStatus of
+        ExitSuccess -> not . T.null <$> readGitProcessQuiet parentRepo ["ls-files", "--", thunkPath]
+        ExitFailure _ -> failWith "Could not resolve HEAD in the enclosing Git repository"
+  when staged $ failWith $
+    "Refusing to replace existing staged changes under " <> T.pack thunkPath
+
+stagePackedThunk
+  :: MonadNixThunk m
+  => FilePath
+  -> FilePath
+  -> FilePath
+  -> ThunkPtr
+  -> FilePath
+  -> m ()
+stagePackedThunk parentRepo thunkPath packedDir thunkPtr tmpDir = do
+  let generatedFiles = Map.keys $ Map.filter isGeneratedFile $
+        _thunkSpec_files $ thunkPtrToSpec thunkPtr
+      indexPath path = normalise $ thunkPath </> path
+  blobs <- forM generatedFiles $ \path -> do
+    objectId <- T.strip <$> readGitProcessQuiet parentRepo
+      ["hash-object", "-w", "--", packedDir </> path]
+    pure (indexPath path, objectId)
+  rawEntries <- readGitProcessQuiet parentRepo
+    ["ls-files", "--stage", "-z", "--", thunkPath]
+  -- cli-extras decodes process output leniently. U+FFFD means an index path
+  -- contained invalid UTF-8 and could not be safely round-tripped below.
+  when (T.any (== '\xfffd') rawEntries) $
+    failWith $ "Cannot safely stage non-UTF-8 paths under " <> T.pack thunkPath
+  -- With -z, each index entry is NUL-terminated and has the form
+  -- "MODE OBJECT_ID STAGE\tPATH"; the path itself may contain newlines.
+  let existingEntries = filter (not . T.null) $ T.splitOn "\0" rawEntries
+  removals <- forM existingEntries $ \entry -> do
+    let (metadata, pathWithTab) = T.breakOn "\t" entry
+    path <- maybe (failWith "git ls-files returned an invalid index entry") pure $
+      T.stripPrefix "\t" pathWithTab
+    objectId <- case T.words metadata of
+      [_mode, oid, _stage] -> pure oid
+      _ -> failWith "git ls-files returned invalid index metadata"
+    -- Mode 0 tells update-index --index-info to remove this existing path.
+    pure $ "0 " <> objectId <> "\t" <> path <> "\0"
+  -- update-index -z --index-info expects one NUL-terminated
+  -- "MODE OBJECT_ID\tPATH" record for each file to add.
+  let additions =
+        [ "100644 " <> objectId <> "\t" <> T.pack path <> "\0"
+        | (path, objectId) <- blobs
+        ]
+      indexInfoPath = tmpDir </> "index-info"
+  liftIO $ BSC.writeFile indexInfoPath $ encodeUtf8 $ mconcat $ removals <> additions
+  inputHandle <- liftIO $ openBinaryFile indexInfoPath ReadMode
+  callProcessAndLogOutput (Debug, Error)
+    (overCreateProcess (\p -> p { Process.std_in = Process.UseHandle inputHandle }) $
+      ignoreGitConfig $ gitProc parentRepo ["update-index", "-z", "--index-info"])
+    `finally` liftIO (hClose inputHandle)
+  where
+    isGeneratedFile = \case
+      ThunkFileSpec_FileMatches _ -> True
+      ThunkFileSpec_Ptr _ -> True
+      _ -> False
 
 modifyThunkPtrByConfig :: ThunkConfig -> ThunkPtr -> ThunkPtr
 modifyThunkPtrByConfig (ThunkConfig markPrivate') ptr = case markPrivate' of

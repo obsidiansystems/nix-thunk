@@ -112,6 +112,21 @@ nix-thunk pack dep/some-dependency
 Packing records the checkout's current commit and upstream repository. By
 default, `nix-thunk` protects you from packing uncommitted or unpushed work.
 
+To commit an updated thunk in the parent repository while keeping the local
+dependency unpacked, stage its packed representation directly:
+
+```bash
+git -C dep/some-dependency push
+nix-thunk stage dep/some-dependency
+git diff --cached -- dep/some-dependency
+git commit -m "Update some-dependency"
+```
+
+`stage` requires a clean checkout whose commits have been pushed. It writes the
+generated thunk only to the parent repository's Git index, leaving the working
+checkout and its branch unchanged. It refuses to replace changes that are
+already staged under the thunk path.
+
 ### Update a dependency
 
 Update a packed thunk to the latest revision on its tracked branch without

@@ -1,5 +1,10 @@
 # Revision history for nix-thunk
 
+## 0.8.0.0
+
+* Add `nix-thunk stage` for staging an updated packed thunk while leaving its
+  checkout unpacked.
+
 ## 0.7.3.0
 
 * Add `runMonadNixThunk` to make it easier to run the actions defined in the library.
