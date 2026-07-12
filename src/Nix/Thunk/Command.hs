@@ -5,7 +5,6 @@ module Nix.Thunk.Command where
 import Cli.Extras (HasCliConfig, Output)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.Error.Class (MonadError)
-import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Log (MonadLog)
 import Data.List.NonEmpty (NonEmpty(..))

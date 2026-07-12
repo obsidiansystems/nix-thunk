@@ -75,4 +75,4 @@ executable nix-thunk
 
 source-repository head
   type:     git
-  location: git://github.com/obsidiansystems/nix-thunk.git
+  location: https://github.com/obsidiansystems/nix-thunk.git

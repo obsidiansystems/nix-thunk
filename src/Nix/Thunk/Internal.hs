@@ -35,7 +35,6 @@ import Control.Monad
 import Control.Monad.Catch (MonadCatch, MonadMask, handle)
 import Control.Monad.Except
 import Control.Monad.Extra (findM)
-import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Log (MonadLog)
 import Crypto.Hash (Digest, HashAlgorithm, SHA1, digestFromByteString)
@@ -70,7 +69,6 @@ import Data.Text.Encoding
 import qualified Data.Text.IO as T
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Traversable
-import Data.Typeable (Typeable)
 import Data.Yaml (parseMaybe)
 import GitHub
 import GitHub.Data.Name
@@ -1658,12 +1656,12 @@ parseSshShorthand uri = do
 
 -- | Represent a git reference (SHA1)
 newtype Ref hash = Ref { unRef :: Digest hash }
-  deriving (Eq, Ord, Typeable)
+  deriving (Eq, Ord)
 
 -- | Invalid Reference exception raised when
 -- using something that is not a ref as a ref.
 newtype RefInvalid = RefInvalid { unRefInvalid :: ByteString }
-  deriving (Show, Eq, Data, Typeable)
+  deriving (Show, Eq, Data)
 
 instance Exception RefInvalid
 

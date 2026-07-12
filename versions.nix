@@ -5,16 +5,7 @@
     # each GHC major release (i.e. maximum z in ghc-x.y.z) that is available in
     # our pin of haskell.nix.
     # NOTE: This should be in ascending order, with the newest GHC at the bottom
-    supported = [
-      "ghc8107"
-      "ghc928"
-      "ghc948"
-      "ghc966"
-      "ghc982"
-      "ghc9101"
-      "ghc912"
-    ];
-    # TODO change back to `- 1`, but hlint is having trouble with GHC 9.10
-    preferred = builtins.elemAt supported (builtins.length supported - 2);
+    supported = [ "ghc9122" ];
+    preferred = builtins.elemAt supported (builtins.length supported - 1);
   };
 }
