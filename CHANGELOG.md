@@ -1,5 +1,9 @@
 # Revision history for nix-thunk
 
+# Unreleased
+
+* Add a `--version` option to the `nix-thunk` executable.
+
 ## 0.7.3.0
 
 * Add `runMonadNixThunk` to make it easier to run the actions defined in the library.
