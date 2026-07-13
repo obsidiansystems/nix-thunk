@@ -85,6 +85,7 @@ in
       with subtest("nix-thunk is installed and git can be configured"):
         client.succeed("""
           nix-thunk --help;
+          test "$(nix-thunk --version)" = "nix-thunk ${command.version}";
           git config --global user.email "you@example.com";
           git config --global user.name "Your Name";
         """)

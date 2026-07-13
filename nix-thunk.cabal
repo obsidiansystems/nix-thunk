@@ -66,6 +66,7 @@ library
 
 executable nix-thunk
   main-is:          src-bin/nix-thunk.hs
+  other-modules:    Paths_nix_thunk
   default-language: Haskell2010
   build-depends:
       base

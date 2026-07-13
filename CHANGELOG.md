@@ -4,6 +4,7 @@
 
 * Add `nix-thunk stage` for staging an updated packed thunk while leaving its
   checkout unpacked.
+* Add a `--version` option to the `nix-thunk` executable.
 
 ## 0.7.3.0
 
