@@ -12,6 +12,7 @@ module Nix.Thunk
   , CheckClean (..)
   , getThunkPtr
   , packThunk
+  , stageThunk
   , createThunk
   , createThunk'
   , createWorktree

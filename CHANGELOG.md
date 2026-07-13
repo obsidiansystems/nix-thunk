@@ -1,7 +1,9 @@
 # Revision history for nix-thunk
 
-# Unreleased
+## 0.8.0.0
 
+* Add `nix-thunk stage` for staging an updated packed thunk while leaving its
+  checkout unpacked.
 * Add a `--version` option to the `nix-thunk` executable.
 
 ## 0.7.3.0

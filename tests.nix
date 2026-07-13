@@ -137,6 +137,94 @@ in
           nix-thunk unpack ~/code/myapp;
         """)
 
+      with subtest("nix-thunk can stage a packed thunk without changing its checkout"):
+        client.fail("nix-thunk stage ~/code/myapp")
+        client.succeed("""
+          ssh githost 'mkdir -p ~/myorg/stageapp.git && git init --bare ~/myorg/stageapp.git'
+          git -C ~/code/myapp push root@githost:/root/myorg/stageapp.git master
+          mkdir -p ~/stage-project/dep
+          cd ~/stage-project
+          git init
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+          echo before > note
+          nix-thunk create -b master root@githost:/root/myorg/stageapp.git dep/myapp
+          git add .
+          git commit -m "Initial packed thunk"
+          nix-thunk unpack dep/myapp
+
+          cd dep/myapp
+          touch staged-revision
+          git add staged-revision
+          git commit -m "Revision to stage"
+
+          cd ../..
+          before_tree=$(git write-tree)
+          if nix-thunk stage dep/myapp; then
+            exit 1
+          fi
+          test "$before_tree" = "$(git write-tree)"
+
+          git -C dep/myapp push
+          echo after > note
+          git add note
+          dependency_rev=$(git -C dep/myapp rev-parse HEAD)
+          dependency_branch=$(git -C dep/myapp branch --show-current)
+
+          nix-thunk stage dep/myapp
+
+          test -d dep/myapp/.git
+          test -f dep/myapp/staged-revision
+          test "$dependency_rev" = "$(git -C dep/myapp rev-parse HEAD)"
+          test "$dependency_branch" = "$(git -C dep/myapp branch --show-current)"
+          test -z "$(git -C dep/myapp status --porcelain)"
+          test "after" = "$(git show :note)"
+          test "$(git ls-files dep/myapp | wc -l)" -eq 3
+          git ls-files dep/myapp | grep -Fx dep/myapp/default.nix
+          git ls-files dep/myapp | grep -Fx dep/myapp/git.json
+          git ls-files dep/myapp | grep -Fx dep/myapp/thunk.nix
+          git show :dep/myapp/git.json | grep -F "$dependency_rev"
+
+          nix-thunk create -b master root@githost:/root/myorg/stageapp.git dep/expected
+          git show :dep/myapp/default.nix > staged-default.nix
+          git show :dep/myapp/git.json > staged-git.json
+          git show :dep/myapp/thunk.nix > staged-thunk.nix
+          cmp staged-default.nix dep/expected/default.nix
+          cmp staged-git.json dep/expected/git.json
+          cmp staged-thunk.nix dep/expected/thunk.nix
+
+          git commit -m "Stage updated thunk"
+          touch dep/myapp/dirty-file
+          before_tree=$(git write-tree)
+          if nix-thunk stage dep/myapp; then
+            exit 1
+          fi
+          test "$before_tree" = "$(git write-tree)"
+          rm dep/myapp/dirty-file
+
+          git update-index --force-remove -- dep/myapp/default.nix
+          before_tree=$(git write-tree)
+          if nix-thunk stage dep/myapp; then
+            exit 1
+          fi
+          test "$before_tree" = "$(git write-tree)"
+          git reset HEAD -- dep/myapp/default.nix
+
+          touch dep/myapp/intent-to-add
+          git add --intent-to-add dep/myapp/intent-to-add
+          before_index=$(git ls-files --stage -- dep/myapp/intent-to-add)
+          if nix-thunk stage dep/myapp; then
+            exit 1
+          fi
+          test "$before_index" = "$(git ls-files --stage -- dep/myapp/intent-to-add)"
+          git reset -- dep/myapp/intent-to-add
+          rm dep/myapp/intent-to-add
+
+          if nix-thunk stage dep/expected; then
+            exit 1
+          fi
+        """)
+
       with subtest("thunkSource works on unpacked thunk"):
         client.succeed("""
           cp ${./default.nix} ~/code/default.nix;
@@ -306,9 +394,30 @@ in
           nix-thunk pack ~/code/myapp-2;
         """)
 
-      with subtest("fails to pack worktree containing modifications"):
+      with subtest("can stage a worktree without removing it"):
         client.succeed("""
           nix-thunk worktree ~/code/myapp-2 ~/code/myapp-mainrepo;
+          git -C ~/code/myapp-2 branch --set-upstream-to origin/master;
+          git -C ~/code init;
+          git -C ~/code config user.email "test@example.com";
+          git -C ~/code config user.name "Test User";
+          git -C ~/code commit --allow-empty -m "Parent repository";
+          branch=$(git -C ~/code/myapp-2 branch --show-current);
+
+          nix-thunk stage ~/code/myapp-2;
+
+          test -f ~/code/myapp-2/.git;
+          test "$branch" = "$(git -C ~/code/myapp-2 branch --show-current)";
+          git -C ~/code/myapp-mainrepo worktree list --porcelain | grep -F "worktree /root/code/myapp-2";
+          test "$(git -C ~/code ls-files myapp-2 | wc -l)" -eq 3;
+          git -C ~/code ls-files myapp-2 | grep -Fx myapp-2/default.nix;
+          git -C ~/code ls-files myapp-2 | grep -Fx myapp-2/git.json;
+          git -C ~/code ls-files myapp-2 | grep -Fx myapp-2/thunk.nix;
+          git -C ~/code reset;
+        """)
+
+      with subtest("fails to pack worktree containing modifications"):
+        client.succeed("""
           touch ~/code/myapp-2/extra-file;
         """)
         client.fail("""
