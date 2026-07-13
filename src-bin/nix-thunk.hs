@@ -7,7 +7,9 @@ import System.Environment
 import System.Exit
 import System.IO
 import Data.List
+import Data.Version (showVersion)
 import Data.Void
+import qualified Paths_nix_thunk as Paths
 
 data Args = Args
   { _args_verbose :: Bool
@@ -25,9 +27,15 @@ args :: Parser Args
 args = Args <$> verbose <*> thunkCommand
 
 argsInfo :: ParserInfo Args
-argsInfo = info (args <**> helper) $ mconcat
+argsInfo = info (args <**> helper <**> versionOption) $ mconcat
   [ fullDesc
   , progDesc "Manage source repositories using Nix"
+  ]
+
+versionOption :: Parser (a -> a)
+versionOption = infoOption ("nix-thunk " <> showVersion Paths.version) $ mconcat
+  [ long "version"
+  , help "Show version"
   ]
 
 parserPrefs :: ParserPrefs
