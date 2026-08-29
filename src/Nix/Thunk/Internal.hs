@@ -155,10 +155,21 @@ setThunkSourceBranch mb = \case
   ThunkSource_GitHub s -> ThunkSource_GitHub $ s {_gitHubSource_branch = mb}
   ThunkSource_Git s -> ThunkSource_Git $ s {_gitSource_branch = mb}
 
+thunkSourceFetchSubmodules :: ThunkSource -> Bool
+thunkSourceFetchSubmodules = \case
+  ThunkSource_GitHub s -> _gitHubSource_fetchSubmodules s
+  ThunkSource_Git s -> _gitSource_fetchSubmodules s
+
+setThunkSourceSubmodules :: Bool -> ThunkSource -> ThunkSource
+setThunkSourceSubmodules b = \case
+  ThunkSource_GitHub s -> ThunkSource_GitHub $ s {_gitHubSource_fetchSubmodules = b}
+  ThunkSource_Git s -> ThunkSource_Git $ s {_gitSource_fetchSubmodules = b}
+
 data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
   , _gitHubSource_branch :: Maybe (Name Branch)
+  , _gitHubSource_fetchSubmodules :: Bool
   , _gitHubSource_private :: Bool
   }
   deriving stock (Eq, Ord, Show)
@@ -187,6 +198,9 @@ data GitSource = GitSource
 
 data ThunkConfig = ThunkConfig
   { _thunkConfig_private :: Maybe Bool
+  , _thunkConfig_submodules :: Maybe Bool
+  -- ^ Whether the repository needs its submodules. The github fetcher cannot
+  -- fetch them, so a thunk that needs them is read through the git fetcher.
   , _thunkConfig_noFlake :: Bool
   -- ^ Write the newest thunk format that carries no flake files. A consumer
   -- cannot use such a thunk as a flake input. This format serves a project that
@@ -233,13 +247,13 @@ data CreateWorktreeConfig = CreateWorktreeConfig
   }
   deriving stock (Show)
 
--- | Convert a GitHub source to a regular Git source. Assumes no submodules.
+-- | Convert a GitHub source to a regular Git source.
 forgetGithub :: Bool -> GitHubSource -> GitSource
 forgetGithub useSsh s =
   GitSource
     { _gitSource_url = GitUri uri
     , _gitSource_branch = _gitHubSource_branch s
-    , _gitSource_fetchSubmodules = False
+    , _gitSource_fetchSubmodules = _gitHubSource_fetchSubmodules s
     , _gitSource_private = _gitHubSource_private s
     }
   where
@@ -542,12 +556,14 @@ parseGitHubSource v = do
   owner <- v Aeson..: "owner"
   repo <- v Aeson..: "repo"
   branch <- v Aeson..:! "branch"
+  fetchSubmodules <- v Aeson..:! "fetchSubmodules"
   private <- v Aeson..:? "private"
   pure $
     GitHubSource
       { _gitHubSource_owner = owner
       , _gitHubSource_repo = repo
       , _gitHubSource_branch = branch
+      , _gitHubSource_fetchSubmodules = fromMaybe False fetchSubmodules
       , _gitHubSource_private = fromMaybe False private
       }
 
@@ -623,6 +639,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
           , ("branch" .=) <$> _gitHubSource_branch s
           , Just $ "rev" .= refToHexString (_thunkRev_commit rev)
           , Just $ "sha256" .= _thunkRev_nixSha256 rev
+          , Just $ "fetchSubmodules" .= _gitHubSource_fetchSubmodules s
           , Just $ "private" .= _gitHubSource_private s
           ]
   ThunkSource_Git s ->
@@ -645,6 +662,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
               [ "owner"
               , "repo"
               , "branch"
+              , "fetchSubmodules"
               , "private"
               , "rev"
               , "sha256"
@@ -673,6 +691,7 @@ createThunk' config = do
     thunkCreateSourcePtr
       (_thunkCreateConfig_uri config)
       (_thunkConfig_private $ _thunkCreateConfig_config config)
+      (_thunkConfig_submodules $ _thunkCreateConfig_config config)
       (untagName <$> _thunkCreateConfig_branch config)
       (T.pack . show <$> _thunkCreateConfig_rev config)
   let trailingDirectoryName = reverse . takeWhile (/= '/') . dropWhile (== '/') . reverse
@@ -964,6 +983,7 @@ thunkPtrToFlakeRef :: ThunkPtr -> Flake.FlakeRef
 thunkPtrToFlakeRef (ThunkPtr rev src) = case src of
   ThunkSource_GitHub s
     | _gitHubSource_private s -> gitRef rev $ forgetGithub True s
+    | _gitHubSource_fetchSubmodules s -> gitRef rev $ forgetGithub False s
     | otherwise -> githubRef rev s
   ThunkSource_Git s -> gitRef rev s
 
@@ -1021,6 +1041,9 @@ updateThunkToLatest cfg target = do
               uriThunkPtr
                 (_gitSource_url $ thunkSourceToGitSource $ _thunkPtr_source t)
                 (_thunkConfig_private $ _thunkUpdateConfig_thunk cfg)
+                ( _thunkConfig_submodules (_thunkUpdateConfig_thunk cfg)
+                    <|> Just (thunkSourceFetchSubmodules $ _thunkPtr_source t)
+                )
                 (_thunkUpdateConfig_branch cfg)
                 (Just ref)
             overwriteThunk (_thunkUpdateConfig_thunk cfg) target newThunkPtr
@@ -1660,7 +1683,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
           return tmpThunk
         Right _ -> failWith "Thunk is not packed"
     updateThunkFromTmp p' = do
-      _ <- packThunk' True (ThunkPackConfig False (ThunkConfig Nothing False)) p'
+      _ <- packThunk' True (ThunkPackConfig False (ThunkConfig Nothing Nothing False)) p'
       callProcessAndLogOutput (Notice, Error) $
         Cli.proc cp ["-r", "-T", p', p]
 
@@ -1988,14 +2011,15 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir =
           pure thunkPtr
 
 modifyThunkPtrByConfig :: ThunkConfig -> ThunkPtr -> ThunkPtr
-modifyThunkPtrByConfig config ptr = case _thunkConfig_private config of
-  Nothing -> ptr
-  Just markPrivate ->
-    ptr
-      { _thunkPtr_source = case _thunkPtr_source ptr of
-          ThunkSource_Git s -> ThunkSource_Git $ s {_gitSource_private = markPrivate}
-          ThunkSource_GitHub s -> ThunkSource_GitHub $ s {_gitHubSource_private = markPrivate}
-      }
+modifyThunkPtrByConfig config ptr =
+  ptr {_thunkPtr_source = withSubmodules $ withPrivate $ _thunkPtr_source ptr}
+  where
+    withPrivate src = case _thunkConfig_private config of
+      Nothing -> src
+      Just markPrivate -> case src of
+        ThunkSource_Git s -> ThunkSource_Git $ s {_gitSource_private = markPrivate}
+        ThunkSource_GitHub s -> ThunkSource_GitHub $ s {_gitHubSource_private = markPrivate}
+    withSubmodules src = maybe src (`setThunkSourceSubmodules` src) $ _thunkConfig_submodules config
 
 data CheckClean
   = -- | Check that the repo is clean, including .gitignored files
@@ -2170,7 +2194,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  (,isWorktree) <$> uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
+  (,isWorktree) <$> uriThunkPtr remoteUri mPrivate Nothing mCurrentBranch mCurrentCommit
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadNixThunk m => ThunkSource -> m ThunkRev
@@ -2185,13 +2209,21 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadNixThunk m => GitUri -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mPrivate mbranch mcommit = do
+-- | The submodule setting is applied before the revision is resolved, because
+-- the hash of a source that carries submodules is not the hash of one that
+-- does not.
+uriThunkPtr :: MonadNixThunk m => GitUri -> Maybe Bool -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mPrivate mSubmodules mbranch mcommit = do
   commit <- case mcommit of
     Nothing -> snd <$> gitGetCommitBranch uri mbranch
     (Just c) -> return c
   (src, rev) <-
-    uriToThunkSource uri mPrivate mbranch >>= \case
+    (maybe id setThunkSourceSubmodules mSubmodules <$> uriToThunkSource uri mPrivate mbranch) >>= \case
+      -- A source that needs submodules is hashed through the git fetcher. The
+      -- archive githubThunkRev reads carries none of them.
+      ThunkSource_GitHub s | _gitHubSource_fetchSubmodules s -> do
+        let s' = forgetGithub (_gitHubSource_private s) s
+        (,) (ThunkSource_GitHub s) <$> gitThunkRev s' commit
       ThunkSource_GitHub s -> do
         rev <- runExceptT $ githubThunkRev s commit
         case rev of
@@ -2219,12 +2251,14 @@ thunkCreateSourcePtr
   -- ^ Where is the repository?
   -> Maybe Bool
   -- ^ Is it private?
+  -> Maybe Bool
+  -- ^ Does it need its submodules?
   -> Maybe Text
   -- ^ Shall we fetch a specific branch?
   -> Maybe Text
   -- ^ Shall we check out a specific commit?
   -> m ThunkPtr
-thunkCreateSourcePtr source mPriv mBranch mCommit = do
+thunkCreateSourcePtr source mPriv mSubmodules mBranch mCommit = do
   uri <- case source of
     ThunkCreateSource_Absolute uri -> pure uri
     ThunkCreateSource_Relative dir -> do
@@ -2236,7 +2270,7 @@ thunkCreateSourcePtr source mPriv mBranch mCommit = do
             fromMaybe (error "parsing a file:// URI should never fail") $
               parseGitUri ("file://" <> T.pack absolute)
         else failWith $ "Path does not refer to a directory: " <> T.pack dir
-  uriThunkPtr uri mPriv mBranch mCommit
+  uriThunkPtr uri mPriv mSubmodules mBranch mCommit
 
 -- | N.B. Cannot infer all fields.
 --
@@ -2267,6 +2301,7 @@ uriToThunkSource (GitUri u) mPrivate
                 { _gitHubSource_owner = N $ URI.unRText owner
                 , _gitHubSource_repo = N $ fromMaybe repoish' $ T.stripSuffix ".git" repoish'
                 , _gitHubSource_branch = N <$> mbranch
+                , _gitHubSource_fetchSubmodules = False
                 , _gitHubSource_private = isPrivate
                 }
         pure $ ThunkSource_GitHub src
@@ -2319,7 +2354,12 @@ getThunkRev
   -> Text
   -> m ThunkRev
 getThunkRev os commit = case os of
-  ThunkSource_GitHub s -> githubThunkRev s commit
+  -- The archive that githubThunkRev hashes carries no submodules, so a
+  -- source that needs them is hashed through the git fetcher instead.
+  ThunkSource_GitHub s
+    | _gitHubSource_fetchSubmodules s ->
+        gitThunkRev (forgetGithub (_gitHubSource_private s) s) commit
+    | otherwise -> githubThunkRev s commit
   ThunkSource_Git s -> gitThunkRev s commit
 
 -- Funny signature indicates no effects depend on the optional branch name.

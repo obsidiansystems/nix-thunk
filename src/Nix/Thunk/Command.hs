@@ -19,6 +19,10 @@ thunkConfig =
             <|> flag' (Just False) (long "public" <> help "Mark thunks as pointing to a public repository")
             <|> pure Nothing
         )
+    <*> ( flag' (Just True) (long "submodules" <> help "Mark thunks as needing the repository's submodules")
+            <|> flag' (Just False) (long "no-submodules" <> help "Mark thunks as not needing submodules")
+            <|> pure Nothing
+        )
     <*> switch (long "no-flake" <> help "Write thunks in the newest format that carries no flake files. Such a thunk cannot be used as a flake input.")
 
 thunkUpdateConfig :: Parser ThunkUpdateConfig
