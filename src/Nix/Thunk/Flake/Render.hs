@@ -35,12 +35,19 @@ renderFlakeNix flake =
       , fold $ Map.mapWithKey renderInputEntry flake.flattenedFlake_inputs
       ,
         [ "  };"
-        , "  outputs = inputs: inputs."
-            <> renderName flake.flattenedFlake_sourceName
-            <> ".outputs;"
+        , -- `src` is the fetched source, which a consumer needs when it reads a
+          -- path inside the repository. A thunk of a repository without a flake
+          -- exposes the same name.
+          "  outputs = inputs: inputs."
+            <> source
+            <> ".outputs // { src = inputs."
+            <> source
+            <> "; };"
         , "}"
         ]
       ]
+  where
+    source = renderName flake.flattenedFlake_sourceName
 
 renderInputEntry :: FlakeId -> FlattenedInput -> [Text]
 renderInputEntry name input = case input.flattenedInput_ref of

@@ -20,8 +20,17 @@
   inputs.mythunk.inputs.nixpkgs.follows = "nixpkgs";   # override
   ```
 
-  When the repository is not a flake, the generated flake exposes the fetched
-  source as `src` instead.
+  Every packed thunk exposes the fetched source as `src`, whether or not the
+  repository has a flake of its own. A consumer needs it to read a path inside
+  the repository, because the input's own `outPath` is the thunk directory:
+
+  ```nix
+  srcs = builtins.mapAttrs (_: v: v.src or v) inputs;
+  obelisk-route = srcs.obelisk + "/lib/route";
+  ```
+
+  When the repository has a flake, `src` sits alongside that flake's outputs,
+  and shadows an output of the same name.
 
   The flake interface survives `unpack` and `worktree`, so a project keeps
   building while you develop a dependency. For a repository that is not a flake,

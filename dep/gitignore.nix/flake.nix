@@ -18,5 +18,5 @@
       type = "github";
     };
   };
-  outputs = inputs: inputs."upstream".outputs;
+  outputs = inputs: inputs."upstream".outputs // { src = inputs."upstream"; };
 }
