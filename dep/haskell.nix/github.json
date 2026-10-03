@@ -2,6 +2,7 @@
   "owner": "input-output-hk",
   "repo": "haskell.nix",
   "branch": "master",
+  "fetchSubmodules": false,
   "private": false,
   "rev": "07e888ef7c26b62c4f2a843ed305c6e09b0a6828",
   "sha256": "0dfgavn79zjpbh6f2h3w43c22xz4qbz8z4s43nz7d62jn6l0zmsh"

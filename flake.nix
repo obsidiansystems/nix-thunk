@@ -3,8 +3,11 @@
     self.submodules = true;
 
     haskell-nix.url = ./dep/haskell.nix;
+    gitignore.url = ./dep/gitignore.nix;
 
     nixpkgs.follows = "haskell-nix/nixpkgs";
+
+    flake-compat.url = "github:NixOS/flake-compat";
   };
 
   outputs = inputs@{ self, ... }:
@@ -13,11 +16,10 @@
 
         # The entry points below take no `system`, because they must also work
         # outside a flake. So this flake builds a package set for one system and
-        # passes that set to each entry point. The entry points compute
-        # everything else themselves, including `gitignoreSource` from
-        # dep/gitignore.nix.
+        # passes that set to each entry point. Outside a flake they read
+        # inputs.nix instead, and reach the same sources.
         pkgsFor = system: inputs.haskell-nix.legacyPackages.${system};
-        nixThunkFor = system: import ./default.nix { pkgs = pkgsFor system; };
+        nixThunkFor = system: import ./default.nix { inherit inputs; pkgs = pkgsFor system; };
     in {
       lib = eachSystem (system:
         let nix-thunk = nixThunkFor system;
@@ -34,8 +36,12 @@
         }
       );
 
+      legacyPackages = eachSystem (system: {
+        release = import ./release.nix { inherit inputs; pkgs = pkgsFor system; };
+      });
+
       devShells = eachSystem (system: {
-        default = import ./shell.nix { pkgs = pkgsFor system; };
+        default = import ./shell.nix { inherit inputs; pkgs = pkgsFor system; };
       });
     };
 

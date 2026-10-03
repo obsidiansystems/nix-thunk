@@ -4,10 +4,10 @@
 # This file is UNSTABLE, and should not be used in downstream projects
 # accordingly.
 
-let defaultInputs = import ./defaultInputs.nix; in
 {
-  haskell-nix ? defaultInputs.haskell-nix {},
-  pkgs ? defaultInputs.pkgs { inherit haskell-nix; },
+  inputs ? import ./inputs.nix,
+  haskell-nix ? import inputs.haskell-nix {},
+  pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs,
 }:
 
 rec {
