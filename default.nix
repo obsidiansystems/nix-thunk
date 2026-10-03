@@ -128,7 +128,6 @@ rec {
           then builtins.fetchGit fetchGitArgs
           else pkgs.fetchgit fetchgitArgs
         )
-        )
       else if hasValidThunk "github.json" then
         pkgs.fetchFromGitHub (filterArgs (builtins.fromJSON (builtins.readFile (p + "/github.json"))))
       else {
