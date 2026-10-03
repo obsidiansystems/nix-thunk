@@ -1064,8 +1064,9 @@ updateThunkToLatest cfg target = do
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubThunkSpecs :: NonEmpty ThunkSpec
 gitHubThunkSpecs =
-  gitHubThunkSpecV9
-    :| [ gitHubThunkSpecV8
+  gitHubThunkSpecV10
+    :| [ gitHubThunkSpecV9
+       , gitHubThunkSpecV8
        , gitHubThunkSpecV7
        , gitHubThunkSpecV6
        , gitHubThunkSpecV5
@@ -1229,6 +1230,10 @@ gitHubThunkSpecV8 = mkThunkSpec "github-v8" "github.json" parseGitHubJsonBytes g
 gitHubThunkSpecV9 :: ThunkSpec
 gitHubThunkSpecV9 = mkFlakeThunkSpec "github-v9" "github.json" parseGitHubJsonBytes gitHubLoaderV8
 
+-- | Lets a thunk fetch under a pure evaluation, which 'gitHubLoaderV8' cannot.
+gitHubThunkSpecV10 :: ThunkSpec
+gitHubThunkSpecV10 = mkFlakeThunkSpec "github-v10" "github.json" parseGitHubJsonBytes gitHubLoaderV10
+
 -- | 'gitHubThunkSpecV8' and 'gitHubThunkSpecV9' both use this loader.
 gitHubLoaderV8 :: Text
 gitHubLoaderV8 =
@@ -1247,14 +1252,59 @@ gitHubLoaderV8 =
   in fetch json
   """
 
+-- | 'gitHubThunkSpecV10' uses this loader. It picks a fetcher in this order:
+--
+-- 1. A public thunk with no submodules: @builtins.fetchTarball@.
+-- 2. An evaluation with @builtins.currentSystem@: the pinned nixpkgs.
+-- 3. A pure evaluation: @builtins.fetchTree@.
+gitHubLoaderV10 :: Text
+gitHubLoaderV10 =
+  """
+  # DO NOT HAND-EDIT THIS FILE
+  let fetch = { private ? false, fetchSubmodules ? false, branch ? null, owner, repo, rev, sha256, ... }:
+    let hashArgs =
+          if builtins ? convertHash
+          then {
+            narHash = builtins.convertHash {
+              hash = sha256;
+              hashAlgo = "sha256";
+              toHashFormat = "sri";
+            };
+          }
+          else {};
+    in if !fetchSubmodules && !private
+    then builtins.fetchTarball {
+      url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz";
+      inherit sha256;
+    }
+    else if builtins ? currentSystem
+    then (import (builtins.fetchTarball {
+      url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+      sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+    }) {}).fetchFromGitHub {
+      inherit owner repo rev sha256 fetchSubmodules private;
+    }
+    else builtins.fetchTree ({
+      type = "git";
+      url = "${if private then "ssh://git@github.com" else "https://github.com"}/${owner}/${repo}.git";
+      inherit rev;
+      submodules = fetchSubmodules;
+      ${if branch == null then null else "ref"} = branch;
+      allRefs = branch == null;
+    } // hashArgs);
+    json = builtins.fromJSON (builtins.readFile ./github.json);
+  in fetch json
+  """
+
 parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
 parseGitHubJsonBytes = parseJsonObject $ parseThunkPtr $ \v ->
   ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
 
 gitThunkSpecs :: NonEmpty ThunkSpec
 gitThunkSpecs =
-  gitThunkSpecV10
-    :| [ gitThunkSpecV9
+  gitThunkSpecV11
+    :| [ gitThunkSpecV10
+       , gitThunkSpecV9
        , gitThunkSpecV8
        , gitThunkSpecV7
        , gitThunkSpecV6
@@ -1467,6 +1517,10 @@ gitThunkSpecV9 = mkThunkSpec "git-v9" "git.json" parseGitHubJsonBytes gitLoaderV
 gitThunkSpecV10 :: ThunkSpec
 gitThunkSpecV10 = mkFlakeThunkSpec "git-v10" "git.json" parseGitHubJsonBytes gitLoaderV9
 
+-- | Lets a thunk fetch under a pure evaluation, which 'gitLoaderV9' cannot.
+gitThunkSpecV11 :: ThunkSpec
+gitThunkSpecV11 = mkFlakeThunkSpec "git-v11" "git.json" parseGitHubJsonBytes gitLoaderV11
+
 -- | 'gitThunkSpecV9' and 'gitThunkSpecV10' both use this loader.
 gitLoaderV9 :: Text
 gitLoaderV9 =
@@ -1487,6 +1541,60 @@ gitLoaderV9 =
     }) {}).fetchgit {
       url = realUrl; inherit rev sha256;
     };
+    json = builtins.fromJSON (builtins.readFile ./git.json);
+  in fetch json
+  """
+
+-- | 'gitThunkSpecV11' uses this loader. It picks a fetcher in this order:
+--
+-- 1. A private thunk with no submodules: @builtins.fetchGit@, which runs in the
+--    evaluator and so has the caller's credentials.
+-- 2. An evaluation with @builtins.currentSystem@: the pinned nixpkgs.
+-- 3. A pure evaluation: @builtins.fetchTree@.
+--
+-- Case 3 takes the URL as written, so a local path resolves only in cases 1
+-- and 2.
+gitLoaderV11 :: Text
+gitLoaderV11 =
+  """
+  # DO NOT HAND-EDIT THIS FILE
+  let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
+    let realUrl = let firstChar = builtins.substring 0 1 url; in
+          if firstChar == "/" then /. + url
+          else if firstChar == "." then ./. + url
+          else url;
+        hashArgs =
+          if sha256 == null || !(builtins ? convertHash)
+          then {}
+          else {
+            exportIgnore = false;
+            narHash = builtins.convertHash {
+              hash = sha256;
+              hashAlgo = "sha256";
+              toHashFormat = "sri";
+            };
+          };
+    in if !fetchSubmodules && private
+    then builtins.fetchGit ({
+      url = realUrl; inherit rev;
+      ${if branch == null then null else "ref"} = branch;
+      allRefs = branch == null;
+    } // hashArgs)
+    else if builtins ? currentSystem
+    then (import (builtins.fetchTarball {
+      url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
+      sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
+    }) {}).fetchgit {
+      url = realUrl; inherit rev sha256;
+    }
+    else builtins.fetchTree ({
+      type = "git";
+      url = realUrl;
+      inherit rev;
+      submodules = fetchSubmodules;
+      ${if branch == null then null else "ref"} = branch;
+      allRefs = branch == null;
+    } // hashArgs);
     json = builtins.fromJSON (builtins.readFile ./git.json);
   in fetch json
   """
