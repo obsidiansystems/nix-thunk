@@ -41,6 +41,32 @@
   project that pins an older nix-thunk for its Nix code must update that pin
   before it updates its thunks.
 
+* A packed thunk now resolves under a pure evaluation, so `import ./dep/mythunk`
+  works inside a flake:
+
+  ```nix
+  mypkg = import inputs.mythunk { inherit system; };
+  ```
+
+  `github-v9` imports a pinned nixpkgs for a private or submodule thunk.
+  `git-v10` imports one for every thunk but a private one with no submodules.
+  That import reads `builtins.currentSystem`, which a pure evaluation does not
+  have, so it fails with `error: attribute 'currentSystem' missing`.
+
+  This release introduces the `github-v10` and `git-v11` thunk specs. Each adds
+  a branch for an evaluation without `builtins.currentSystem`. That branch
+  fetches with `builtins.fetchTree`, which needs no package set. Please update
+  all your thunks: `nix-thunk unpack $path; nix-thunk pack $path`.
+
+  `github-v10` fetches every other case as `github-v8` does.
+
+  `git-v11` also checks `sha256` for a private thunk with no submodules, which
+  `git-v10` did not. That fetch keeps `builtins.fetchGit` and the caller's own
+  credentials.
+
+  Both specs check `sha256` only on Nix 2.19 and newer, which has
+  `builtins.convertHash`. An older Nix pins by revision alone, as before.
+
 * `create`, `pack` and `update` accept `--no-flake`, which writes a thunk in the
   newest format that carries no flake files. You cannot use such a thunk as a
   flake input, so the flag serves a project that does not want the interface.
