@@ -14,12 +14,11 @@
     let nixpkgs = if inputs ? "nixpkgs" then inputs.nixpkgs else builtins.getFlake "nixpkgs";
         eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
 
-        # The entry points below take no `system`, because they must also work
-        # outside a flake. So this flake builds a package set for one system and
-        # passes that set to each entry point. Outside a flake they read
-        # inputs.nix instead, and reach the same sources.
+        # haskell.nix has a package set per system already, so the entry points
+        # take that one rather than building their own. Outside a flake they
+        # read inputs.nix instead, and reach the same sources.
         pkgsFor = system: inputs.haskell-nix.legacyPackages.${system};
-        nixThunkFor = system: import ./default.nix { inherit inputs; pkgs = pkgsFor system; };
+        nixThunkFor = system: import ./default.nix { inherit system inputs; pkgs = pkgsFor system; };
     in {
       lib = eachSystem (system:
         let nix-thunk = nixThunkFor system;
@@ -37,11 +36,11 @@
       );
 
       legacyPackages = eachSystem (system: {
-        release = import ./release.nix { inherit inputs; pkgs = pkgsFor system; };
+        release = import ./release.nix { inherit system inputs; pkgs = pkgsFor system; };
       });
 
       devShells = eachSystem (system: {
-        default = import ./shell.nix { inherit inputs; pkgs = pkgsFor system; };
+        default = import ./shell.nix { inherit system inputs; pkgs = pkgsFor system; };
       });
     };
 

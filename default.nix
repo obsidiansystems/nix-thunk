@@ -7,15 +7,17 @@
 # that is what these functions help with.
 
 {
+  system ? builtins.currentSystem,
   inputs ? import ./inputs.nix,
-  haskell-nix ? import inputs.haskell-nix {},
-  pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs,
+  haskell-nix ? import inputs.haskell-nix { inherit system; },
+  pkgs ? import haskell-nix.sources.nixpkgs
+    (haskell-nix.nixpkgsArgs // { localSystem = { inherit system; }; }),
   lib ? pkgs.lib,
   gitignoreSource ?
     (import inputs.gitignore { inherit lib; }).gitignoreSource,
 }:
 
-let myLib = import ./lib.nix { inherit inputs haskell-nix pkgs; }; in
+let myLib = import ./lib.nix { inherit system inputs haskell-nix pkgs; }; in
 
 rec {
   command = (myLib.perGhc {}).command;

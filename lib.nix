@@ -5,9 +5,11 @@
 # accordingly.
 
 {
+  system ? builtins.currentSystem,
   inputs ? import ./inputs.nix,
-  haskell-nix ? import inputs.haskell-nix {},
-  pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs,
+  haskell-nix ? import inputs.haskell-nix { inherit system; },
+  pkgs ? import haskell-nix.sources.nixpkgs
+    (haskell-nix.nixpkgsArgs // { localSystem = { inherit system; }; }),
 }:
 
 rec {
