@@ -6,16 +6,16 @@
 # thunk whether it is unpacked or not. That is a bit more tricky, and so
 # that is what these functions help with.
 
-let defaultInputs = import ./defaultInputs.nix; in
 {
-  haskell-nix ? defaultInputs.haskell-nix {},
-  pkgs ? defaultInputs.pkgs { inherit haskell-nix; },
+  inputs ? import ./inputs.nix,
+  haskell-nix ? import inputs.haskell-nix {},
+  pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs,
   lib ? pkgs.lib,
   gitignoreSource ?
-    (import ./dep/gitignore.nix { inherit lib; }).gitignoreSource,
+    (import inputs.gitignore { inherit lib; }).gitignoreSource,
 }:
 
-let myLib = import ./lib.nix { inherit haskell-nix pkgs; }; in
+let myLib = import ./lib.nix { inherit inputs haskell-nix pkgs; }; in
 
 rec {
   command = (myLib.perGhc {}).command;
