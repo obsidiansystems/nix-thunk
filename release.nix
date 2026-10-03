@@ -1,10 +1,12 @@
-{ inputs ? import ./inputs.nix
-, haskell-nix ? import inputs.haskell-nix {}
-, pkgs ? import haskell-nix.sources.nixpkgs haskell-nix.nixpkgsArgs
+{ system ? builtins.currentSystem
+, inputs ? import ./inputs.nix
+, haskell-nix ? import inputs.haskell-nix { inherit system; }
+, pkgs ? import haskell-nix.sources.nixpkgs
+    (haskell-nix.nixpkgsArgs // { localSystem = { inherit system; }; })
 }:
 
 let versions = import ./versions.nix;
-    nix-thunk = import ./lib.nix { inherit inputs haskell-nix pkgs; };
+    nix-thunk = import ./lib.nix { inherit system inputs haskell-nix pkgs; };
     instances = builtins.listToAttrs (map (ghcVersion: {
       name = ghcVersion;
       value = nix-thunk.perGhc { ghc = ghcVersion; };
@@ -62,5 +64,5 @@ in {
 
   # Test the interface of default.nix.  This should NOT be deduplicated, even if
   # it is building the same derivations as other parts of this file.
-  command = (import ./default.nix { inherit inputs haskell-nix pkgs; }).command;
+  command = (import ./default.nix { inherit system inputs haskell-nix pkgs; }).command;
 }
