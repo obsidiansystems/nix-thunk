@@ -2019,7 +2019,9 @@ modifyThunkPtrByConfig config ptr =
       Just markPrivate -> case src of
         ThunkSource_Git s -> ThunkSource_Git $ s {_gitSource_private = markPrivate}
         ThunkSource_GitHub s -> ThunkSource_GitHub $ s {_gitHubSource_private = markPrivate}
-    withSubmodules src = maybe src (`setThunkSourceSubmodules` src) $ _thunkConfig_submodules config
+    withSubmodules src = case _thunkConfig_submodules config of
+      Nothing -> src
+      Just fetchSubmodules -> setThunkSourceSubmodules fetchSubmodules src
 
 data CheckClean
   = -- | Check that the repo is clean, including .gitignored files
@@ -2212,13 +2214,17 @@ getLatestRev os = do
 -- | The submodule setting is applied before the revision is resolved, because
 -- the hash of a source that carries submodules is not the hash of one that
 -- does not.
-uriThunkPtr :: MonadNixThunk m => GitUri -> Maybe Bool -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr :: forall m. MonadNixThunk m => GitUri -> Maybe Bool -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mPrivate mSubmodules mbranch mcommit = do
   commit <- case mcommit of
     Nothing -> snd <$> gitGetCommitBranch uri mbranch
     (Just c) -> return c
+
+  let srcWithSubmodules :: m ThunkSource
+      srcWithSubmodules = maybe id setThunkSourceSubmodules mSubmodules <$> uriToThunkSource uri mPrivate mbranch
+
   (src, rev) <-
-    (maybe id setThunkSourceSubmodules mSubmodules <$> uriToThunkSource uri mPrivate mbranch) >>= \case
+    srcWithSubmodules >>= \case
       -- A source that needs submodules is hashed through the git fetcher. The
       -- archive githubThunkRev reads carries none of them.
       ThunkSource_GitHub s | _gitHubSource_fetchSubmodules s -> do
