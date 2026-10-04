@@ -8,6 +8,21 @@ let flakeInputs = (import
 
     flakeSrcs = builtins.mapAttrs (_: v: v.src or v) flakeInputs;
 
-    thunkSrcs = import ./nix/libs/thunks.nix ./dep;
+    thunkSource = path:
+      if builtins.pathExists (path + "/thunk.nix")
+      then import (path + "/thunk.nix")
+      else path;
+    thunkSources = dir:
+      let entries = builtins.readDir dir;
+          directories = builtins.filter
+            (name: entries.${name} == "directory")
+            (builtins.attrNames entries);
+          entryFor = name: {
+            inherit name;
+            value = thunkSource (dir + "/${name}");
+          };
+      in builtins.listToAttrs (map entryFor directories);
+
+    thunkSrcs = thunkSources ./dep;
 
 in flakeSrcs // thunkSrcs
